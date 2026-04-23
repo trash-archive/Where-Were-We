@@ -8,7 +8,7 @@ import { signOut, getDisplayName } from './auth.js';
 import { validateFile, uploadPhoto, getUserPhotos, deletePhoto, updatePhotoLocation } from './photos.js';
 import { createRoom, joinRoom, subscribeToRoom, startRoom, leaveRoom } from './rooms.js';
 import { openLocationPicker } from './locationPicker.js';
-import { startSoloGame as startGame, startMultiplayerGame as startMP } from './game.js';
+import { startSoloGame as startGame, startMultiplayerGame as startMP, clearSnapshot } from './game.js';
 import { showScreen, toast, escapeHtml } from './utils.js';
 
 let currentUser = null;
@@ -17,6 +17,8 @@ let unsubRoom = null;
 let unsubRoomsList = null;
 let currentRoom = null;
 let eventsWired = false;
+let currentPage = 1;
+const PAGE_SIZE = 20;
 
 // ── Init (called once at startup) ─────────────────────────────────────────
 export function initDashboard() {
@@ -27,8 +29,12 @@ export function initDashboard() {
 export async function loadDashboard(user) {
   currentUser = user;
   const name = getDisplayName(user);
-  document.getElementById('dash-greeting').textContent = `Welcome back, ${name}`;
+  const initials = name.slice(0, 2).toUpperCase();
   document.getElementById('nav-username').textContent = name;
+  document.getElementById('nav-user-avatar').textContent = initials;
+  document.getElementById('nav-dropdown-name').textContent = name;
+  document.getElementById('nav-dropdown-email').textContent = user.email ?? '';
+  document.getElementById('play-hero-greeting').textContent = `Welcome back, ${name}`;
   await Promise.all([refreshPhotos(), loadRooms()]);
   subscribeRoomsList();
 }
@@ -36,6 +42,7 @@ export async function loadDashboard(user) {
 async function refreshPhotos() {
   try {
     userPhotos = await getUserPhotos(currentUser.id);
+    currentPage = 1;
     renderPhotoGrid();
     updateStats();
   } catch (e) {
@@ -44,10 +51,16 @@ async function refreshPhotos() {
 }
 
 function updateStats() {
-  document.getElementById('stat-photos').textContent = userPhotos.length;
-  // games/best score would come from a scores table — show placeholders for now
-  const playable = userPhotos.filter(p => p.lat !== null).length;
-  document.getElementById('dash-play-btn').disabled = playable < 1;
+  const total = userPhotos.length;
+  const withGps = userPhotos.filter(p => p.lat !== null).length;
+  document.getElementById('stat-photos').textContent = total;
+  document.getElementById('stat-gps').textContent = withGps;
+  document.getElementById('dash-play-btn').disabled = withGps < 1;
+  document.getElementById('play-hero-sub').textContent = withGps > 0
+    ? `${withGps} photo${withGps !== 1 ? 's' : ''} ready to play`
+    : 'Upload photos with GPS to start playing';
+  const countEl = document.getElementById('dash-photo-count');
+  if (countEl) countEl.textContent = total > 0 ? `${total} photo${total !== 1 ? 's' : ''}` : '';
 }
 
 // ── Rejoin active room after page reload ─────────────────────────────────
@@ -218,11 +231,22 @@ async function rejoinRoom(roomId) {
 // ── Photo Grid ─────────────────────────────────────────────────────────────
 function renderPhotoGrid() {
   const grid = document.getElementById('dash-photo-grid');
+  const paginationEl = document.getElementById('dash-pagination');
+
   if (userPhotos.length === 0) {
     grid.innerHTML = '';
+    paginationEl.style.display = 'none';
     return;
   }
-  grid.innerHTML = userPhotos.map(p => `
+
+  const totalPages = Math.ceil(userPhotos.length / PAGE_SIZE);
+  // Clamp currentPage in case photos were deleted
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const page = userPhotos.slice(start, start + PAGE_SIZE);
+
+  grid.innerHTML = page.map(p => `
     <div class="photo-item" data-id="${p.id}">
       <img src="${p.public_url}" alt="${escapeHtml(p.original_name ?? '')}" loading="lazy">
       <div class="photo-item-overlay">
@@ -249,6 +273,41 @@ function renderPhotoGrid() {
   });
   grid.querySelectorAll('[data-action="delete"]').forEach(btn => {
     btn.addEventListener('click', e => { e.stopPropagation(); handleDelete(btn.dataset.id, btn.dataset.path); });
+  });
+
+  // Pagination
+  if (totalPages <= 1) {
+    paginationEl.style.display = 'none';
+    return;
+  }
+  paginationEl.style.display = 'flex';
+  const from = start + 1, to = Math.min(start + PAGE_SIZE, userPhotos.length);
+  paginationEl.innerHTML = `
+    <span class="pagination-info">${from}–${to} of ${userPhotos.length}</span>
+    <div class="pagination-controls">
+      <button class="page-btn" id="page-prev" ${currentPage === 1 ? 'disabled' : ''}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      ${Array.from({ length: totalPages }, (_, i) => i + 1)
+        .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+        .reduce((acc, p, idx, arr) => {
+          if (idx > 0 && p - arr[idx - 1] > 1) acc.push('…');
+          acc.push(p);
+          return acc;
+        }, [])
+        .map(p => p === '…'
+          ? `<span style="padding:0 4px;color:var(--gray-400);">…</span>`
+          : `<button class="page-btn${p === currentPage ? ' active' : ''}" data-page="${p}">${p}</button>`
+        ).join('')}
+      <button class="page-btn" id="page-next" ${currentPage === totalPages ? 'disabled' : ''}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </div>
+  `;
+  paginationEl.querySelector('#page-prev')?.addEventListener('click', () => { currentPage--; renderPhotoGrid(); });
+  paginationEl.querySelector('#page-next')?.addEventListener('click', () => { currentPage++; renderPhotoGrid(); });
+  paginationEl.querySelectorAll('[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => { currentPage = parseInt(btn.dataset.page); renderPhotoGrid(); });
   });
 }
 
@@ -441,6 +500,7 @@ function wireEvents() {
   // Room lobby
   document.getElementById('room-back-btn').addEventListener('click', () => {
     if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+    clearSnapshot();
     showScreen('dashboard');
   });
   document.getElementById('room-copy-btn').addEventListener('click', () => {
@@ -462,6 +522,7 @@ function wireEvents() {
       if (unsubRoom) { unsubRoom(); unsubRoom = null; }
       currentRoom = null;
     }
+    clearSnapshot();
     showScreen('dashboard');
   });
 
@@ -476,6 +537,19 @@ function wireEvents() {
     }
   });
 
+  // Nav user dropdown
+  const navUserBtn = document.getElementById('nav-user-btn');
+  const navDropdown = document.getElementById('nav-dropdown');
+  navUserBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = navDropdown.classList.toggle('open');
+    navUserBtn.classList.toggle('open', isOpen);
+  });
+  document.addEventListener('click', () => {
+    navDropdown.classList.remove('open');
+    navUserBtn.classList.remove('open');
+  });
+
   // Sign out
   document.getElementById('nav-signout-btn').addEventListener('click', async () => {
     if (unsubRoomsList) { unsubRoomsList(); unsubRoomsList = null; }
@@ -488,6 +562,6 @@ function wireEvents() {
   if (joinCode) handleJoinRoom(joinCode);
 }
 
-function showLoading(show) {
+export function showLoading(show) {
   document.getElementById('loading-overlay').classList.toggle('show', show);
 }

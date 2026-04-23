@@ -5,6 +5,7 @@
  */
 
 import { getOrCreateMap, destroyMap } from './utils.js';
+import { makePinIcon } from './game.js';
 
 let pickerMap = null;
 let pickerMarker = null;
@@ -64,11 +65,7 @@ function onMapClick(e) {
 function placeMarker(latlng) {
   if (pickerMarker) pickerMap.removeLayer(pickerMarker);
   pickerMarker = L.marker(latlng, {
-    icon: L.divIcon({
-      className: '',
-      html: `<div style="width:20px;height:20px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 2px 8px rgba(37,99,235,0.4);"></div>`,
-      iconSize: [20, 20], iconAnchor: [10, 10],
-    })
+    icon: makePinIcon('#2563eb', '<circle cx="14" cy="10" r="4.5" fill="white" opacity="0.95"/>'),
   }).addTo(pickerMap);
 }
 

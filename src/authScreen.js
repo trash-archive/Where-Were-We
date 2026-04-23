@@ -5,7 +5,8 @@
 
 import { signIn, signUp, onAuthChange, getDisplayName } from './auth.js';
 import { showScreen } from './utils.js';
-import { loadDashboard, rejoinActiveRoom } from './dashboardScreen.js';
+import { loadDashboard, rejoinActiveRoom, showLoading } from './dashboardScreen.js';
+import { restoreGameSnapshot } from './game.js';
 
 let isSignUp = false;
 let initialised = false;
@@ -16,11 +17,28 @@ export function initAuth() {
       if (!initialised) {
         initialised = true;
         if (user) {
-          showScreen('dashboard');
-          await loadDashboard(user);
-          // Rejoin active room if we were mid-game before reload
+          const snapshot = sessionStorage.getItem('gameSnapshot');
           const activeRoomId = sessionStorage.getItem('activeRoomId');
-          if (activeRoomId) await rejoinActiveRoom(activeRoomId);
+          const hasRestore = snapshot || activeRoomId;
+
+          // Only show dashboard immediately if there's nothing to restore
+          if (!hasRestore) showScreen('dashboard');
+          else showLoading(true);
+
+          await loadDashboard(user);
+
+          if (snapshot) {
+            const restored = restoreGameSnapshot(JSON.parse(snapshot));
+            if (!restored) {
+              if (activeRoomId) await rejoinActiveRoom(activeRoomId);
+              else showScreen('dashboard');
+            }
+          } else if (activeRoomId) {
+            const rejoined = await rejoinActiveRoom(activeRoomId);
+            if (!rejoined) showScreen('dashboard');
+          }
+
+          if (hasRestore) showLoading(false);
         } else {
           showScreen('auth');
         }

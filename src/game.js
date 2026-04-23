@@ -6,7 +6,7 @@
  */
 
 import { showScreen, haversineKm, distanceToScore, formatDistance, getOrCreateMap, destroyMap, escapeHtml, toast } from './utils.js';
-import { submitRoomGuess, advanceRound, finishRoom, subscribeToRoom } from './rooms.js';
+import { submitRoomGuess, advanceRound, finishRoom, subscribeToRoom, leaveRoom } from './rooms.js';
 
 const state = {
   photos: [],
@@ -26,6 +26,28 @@ const state = {
   hasGuessed: false,    // has this player submitted for the current round
 };
 
+// ── Snapshot helpers ──────────────────────────────────────────────────────
+function saveSnapshot(screen) {
+  const snap = {
+    screen,
+    photos: state.photos,
+    currentRound: state.currentRound,
+    totalScore: state.totalScore,
+    roundResults: state.roundResults,
+    currentGuess: state.currentGuess,
+    roomId: state.roomId,
+    isHost: state.isHost,
+    userId: state.userId,
+    userName: state.userName,
+  };
+  try { sessionStorage.setItem('gameSnapshot', JSON.stringify(snap)); } catch {}
+}
+
+export function clearSnapshot() {
+  sessionStorage.removeItem('gameSnapshot');
+  sessionStorage.removeItem('activeScreen');
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────
 export function startSoloGame(photos) {
   Object.assign(state, {
@@ -35,12 +57,14 @@ export function startSoloGame(photos) {
     roomId: null, isHost: false, roomData: null,
     unsubRoom: null, hasGuessed: false,
   });
+  document.getElementById('game-players-pill')?.classList.add('hidden');
+  document.getElementById('game-quit-btn')?.classList.remove('hidden');
+  saveSnapshot('game');
   showScreen('game');
   requestAnimationFrame(() => { initGameMap(); loadRound(); });
 }
 
 export function startMultiplayerGame(photos, roomId, userId, userName, isHost, roomData) {
-  // Use photos in the exact order the host set — no shuffle
   Object.assign(state, {
     photos: [...photos],
     currentRound: roomData.current_round ?? 0,
@@ -49,8 +73,12 @@ export function startMultiplayerGame(photos, roomId, userId, userName, isHost, r
     roomId, isHost, userId, userName, roomData,
     unsubRoom: null, hasGuessed: false,
   });
-  // Persist room ID so we can rejoin after a page reload
   sessionStorage.setItem('activeRoomId', roomId);
+  saveSnapshot('game');
+  // Show multiplayer-only UI
+  document.getElementById('game-players-pill')?.classList.remove('hidden');
+  document.getElementById('game-quit-btn')?.classList.remove('hidden');
+  updatePlayersPill(roomData);
   showScreen('game');
   requestAnimationFrame(() => { initGameMap(); loadRound(); });
   subscribeGameRoom();
@@ -60,17 +88,20 @@ export function startMultiplayerGame(photos, roomId, userId, userName, isHost, r
 function subscribeGameRoom() {
   if (state.unsubRoom) state.unsubRoom();
   state.unsubRoom = subscribeToRoom(state.roomId, (updated) => {
-    // null means room was deleted — host left or lost connection
+    // null means room was deleted — host left
     if (!updated) {
       if (state.unsubRoom) { state.unsubRoom(); state.unsubRoom = null; }
       sessionStorage.removeItem('activeRoomId');
-      showScreen('dashboard');
-      toast('The host ended the game.', 'error');
+      clearSnapshot();
+      document.getElementById('host-ended-modal')?.classList.add('open');
       return;
     }
 
     const prev = state.roomData;
     state.roomData = updated;
+
+    // Update live player count pill
+    updatePlayersPill(updated);
 
     // Host advanced the round — non-hosts follow
     if (!state.isHost && updated.current_round !== prev?.current_round) {
@@ -108,6 +139,13 @@ function subscribeGameRoom() {
   });
 }
 
+function updatePlayersPill(room) {
+  const pill = document.getElementById('game-players-pill');
+  const count = document.getElementById('game-players-count');
+  if (!pill || !count) return;
+  count.textContent = (room.players ?? []).length;
+}
+
 function updateWaitingCount(room) {
   const el = document.getElementById('mp-waiting-text');
   if (!el) return;
@@ -125,13 +163,34 @@ function initGameMap() {
   }, 80);
 }
 
+function makePinIcon(color, inner) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:28px;height:34px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.32));">
+      <svg viewBox="0 0 28 34" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:28px;height:34px;">
+        <path d="M14 0C8.477 0 4 4.477 4 10c0 7.5 10 24 10 24S24 17.5 24 10C24 4.477 19.523 0 14 0z" fill="${color}"/>
+        ${inner}
+      </svg>
+    </div>`,
+    iconSize: [28, 34],
+    iconAnchor: [14, 34],
+    popupAnchor: [0, -34],
+  });
+}
+
+function makeGuessPin(color = '#2563eb') {
+  return makePinIcon(color, '<circle cx="14" cy="10" r="4.5" fill="white" opacity="0.95"/>');
+}
+
+function makeActualPin() {
+  return makePinIcon('#16a34a', '<path d="M10 10l2.5 2.5 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>');
+}
+
 function onMapClick(e) {
-  if (state.hasGuessed) return; // locked after submitting
+  if (state.hasGuessed) return;
   state.currentGuess = { lat: e.latlng.lat, lng: e.latlng.lng };
   if (state.guessMarker) state.gameMap.removeLayer(state.guessMarker);
-  state.guessMarker = L.circleMarker(e.latlng, {
-    radius: 9, color: '#fff', weight: 3, fillColor: '#2563eb', fillOpacity: 1,
-  }).addTo(state.gameMap);
+  state.guessMarker = L.marker(e.latlng, { icon: makeGuessPin('#2563eb'), zIndexOffset: 100 }).addTo(state.gameMap);
   document.getElementById('submit-guess-btn').disabled = false;
   document.getElementById('game-map-pin-hint').classList.add('hidden');
 }
@@ -157,8 +216,7 @@ function loadRound() {
   document.getElementById('game-map-pin-hint').classList.remove('hidden');
 
   if (state.gameMap) {
-    state.gameMap.eachLayer(l => { if (l instanceof L.CircleMarker) state.gameMap.removeLayer(l); });
-    state.guessMarker = null;
+    if (state.guessMarker) { state.gameMap.removeLayer(state.guessMarker); state.guessMarker = null; }
     state.gameMap.setView([20, 0], 2);
   }
 }
@@ -182,14 +240,14 @@ export async function submitGuess() {
   btn.disabled = true;
   btn.textContent = 'Guess submitted';
 
+  saveSnapshot('round-result');
+
   if (state.roomId) {
     try {
       await submitRoomGuess(state.roomId, state.userId, state.currentRound, state.currentGuess, distKm, score);
-      // Show waiting state — realtime will fire showRoundResult when all guessed
       showWaitingState(score);
     } catch {
       toast('Could not sync score. Check your connection.', 'error');
-      // Fall back to solo-style result
       showRoundResult(photo, state.currentGuess, distKm, score, null);
     }
   } else {
@@ -280,36 +338,38 @@ function buildResultMap(photo, guess, room) {
 
   const actual = L.latLng(photo.lat, photo.lng);
 
-  // Actual location marker
-  L.marker(actual, {
-    icon: L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#16a34a;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })
-  }).addTo(m).bindPopup('Actual location');
+  // Actual location — green pin with checkmark
+  L.marker(actual, { icon: makeActualPin(), zIndexOffset: 200 })
+    .addTo(m).bindPopup('<b>Actual location</b>');
 
   const bounds = [actual];
 
   if (room) {
-    // Plot all players' guesses
     const roundGuesses = (room.guesses ?? []).filter(g => g.round === state.currentRound);
     roundGuesses.forEach(g => {
       const ll = L.latLng(g.lat, g.lng);
       const player = (room.players ?? []).find(p => p.id === g.user_id);
       const isMe = g.user_id === state.userId;
-      L.circleMarker(ll, {
-        radius: 7, color: '#fff', weight: 2,
-        fillColor: isMe ? '#2563eb' : '#9ca3af', fillOpacity: 1,
-      }).addTo(m).bindPopup(escapeHtml(player?.name ?? 'Player'));
-      L.polyline([actual, ll], { color: isMe ? '#2563eb' : '#9ca3af', weight: 1.5, dashArray: '4,4', opacity: 0.6 }).addTo(m);
+      const color = isMe ? '#2563eb' : '#9ca3af';
+      L.marker(ll, { icon: makeGuessPin(color), zIndexOffset: isMe ? 150 : 100 })
+        .addTo(m).bindPopup(`<b>${escapeHtml(player?.name ?? 'Player')}</b>`);
+      L.polyline([actual, ll], {
+        color, weight: isMe ? 2.5 : 1.5,
+        dashArray: '6,5', opacity: isMe ? 0.85 : 0.5,
+      }).addTo(m);
       bounds.push(ll);
     });
   } else if (guess) {
     const guessLL = L.latLng(guess.lat, guess.lng);
-    L.circleMarker(guessLL, { radius: 7, color: '#fff', weight: 2, fillColor: '#2563eb', fillOpacity: 1 })
-      .addTo(m).bindPopup('Your guess');
-    L.polyline([actual, guessLL], { color: '#2563eb', weight: 1.5, dashArray: '4,4', opacity: 0.7 }).addTo(m);
+    L.marker(guessLL, { icon: makeGuessPin('#2563eb'), zIndexOffset: 150 })
+      .addTo(m).bindPopup('<b>Your guess</b>');
+    L.polyline([actual, guessLL], {
+      color: '#2563eb', weight: 2.5, dashArray: '6,5', opacity: 0.8,
+    }).addTo(m);
     bounds.push(guessLL);
   }
 
-  m.fitBounds(L.latLngBounds(bounds).pad(0.3));
+  m.fitBounds(L.latLngBounds(bounds).pad(0.35));
 }
 
 // ── Next Round ────────────────────────────────────────────────────────────
@@ -326,10 +386,10 @@ export async function nextRound() {
 
   if (state.roomId && state.isHost) {
     try { await advanceRound(state.roomId, state.currentRound); } catch {}
-    // Host advances locally; realtime fires for guests
   }
 
   state.hasGuessed = false;
+  saveSnapshot('game');
   showScreen('game');
   setTimeout(() => { if (state.gameMap) state.gameMap.invalidateSize(); loadRound(); }, 80);
 }
@@ -338,6 +398,7 @@ export async function nextRound() {
 function showFinalScreen() {
   if (state.unsubRoom) { state.unsubRoom(); state.unsubRoom = null; }
   sessionStorage.removeItem('activeRoomId');
+  saveSnapshot('final');
 
   const results = state.roundResults;
   const total = results.reduce((s, r) => s + r.score, 0);
@@ -405,5 +466,106 @@ function showFinalScreen() {
 export function invalidateGameMap() { if (state.gameMap) state.gameMap.invalidateSize(); }
 export function panGameMap(lat, lng, zoom = 10) { if (state.gameMap) state.gameMap.setView([lat, lng], zoom, { animate: true }); }
 
+/**
+ * Called on page reload — restores game/result/final screen from sessionStorage snapshot.
+ * Returns true if successfully restored, false if snapshot was unusable.
+ */
+export function restoreGameSnapshot(snap) {
+  if (!snap?.photos?.length) return false;
+
+  Object.assign(state, {
+    photos: snap.photos,
+    currentRound: snap.currentRound ?? 0,
+    totalScore: snap.totalScore ?? 0,
+    roundResults: snap.roundResults ?? [],
+    currentGuess: snap.currentGuess ?? null,
+    roomId: snap.roomId ?? null,
+    isHost: snap.isHost ?? false,
+    userId: snap.userId ?? null,
+    userName: snap.userName ?? null,
+    guessMarker: null,
+    gameMap: null,
+    roomData: null,
+    unsubRoom: null,
+    hasGuessed: false,
+  });
+
+  const screen = snap.screen;
+
+  if (screen === 'game') {
+    document.getElementById('game-quit-btn')?.classList.remove('hidden');
+    if (state.roomId) {
+      document.getElementById('game-players-pill')?.classList.remove('hidden');
+      if (state.roomData) updatePlayersPill(state.roomData);
+    }
+    showScreen('game');
+    requestAnimationFrame(() => { initGameMap(); loadRound(); });
+    if (state.roomId) subscribeGameRoom();
+    return true;
+  }
+
+  if (screen === 'round-result') {
+    if (state.roomId) {
+      document.getElementById('game-players-pill')?.classList.remove('hidden');
+      document.getElementById('game-quit-btn')?.classList.remove('hidden');
+    }
+    // The round was already submitted — show the result for the last completed round
+    const lastResult = state.roundResults[state.roundResults.length - 1];
+    if (!lastResult) {
+      // No result yet, fall back to showing the game screen for that round
+      showScreen('game');
+      requestAnimationFrame(() => { initGameMap(); loadRound(); });
+      if (state.roomId) subscribeGameRoom();
+      return true;
+    }
+    showRoundResult(lastResult.photo, lastResult.guess, lastResult.distKm, lastResult.score, null);
+    if (state.roomId) subscribeGameRoom();
+    return true;
+  }
+
+  if (screen === 'final') {
+    if (!state.roundResults.length) return false;
+    showFinalScreen();
+    return true;
+  }
+
+  return false;
+}
+
+// ── Quit game ─────────────────────────────────────────────────────────────
+export function quitGame(phase) {
+  if (phase === 'confirm') {
+    // Solo — no confirm needed, just leave
+    if (!state.roomId) {
+      clearSnapshot();
+      showScreen('dashboard');
+      return;
+    }
+    const titleEl = document.getElementById('quit-modal-title');
+    const bodyEl = document.getElementById('quit-modal-body');
+    if (state.isHost) {
+      titleEl.textContent = 'End game for everyone?';
+      bodyEl.textContent = 'You are the host. Leaving will end the game for all players.';
+    } else {
+      titleEl.textContent = 'Leave game?';
+      bodyEl.textContent = 'Your progress for this game will be lost.';
+    }
+    document.getElementById('quit-confirm-modal').classList.add('open');
+    return;
+  }
+
+  // phase === 'execute'
+  if (state.unsubRoom) { state.unsubRoom(); state.unsubRoom = null; }
+  const roomId = state.roomId;
+  const userId = state.userId;
+  clearSnapshot();
+  sessionStorage.removeItem('activeRoomId');
+  document.getElementById('game-players-pill')?.classList.add('hidden');
+  document.getElementById('game-quit-btn')?.classList.add('hidden');
+  showScreen('dashboard');
+  if (roomId && userId) leaveRoom(roomId, userId).catch(() => {});
+}
+
+export { makePinIcon };
 function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
 export { state as gameState };

@@ -16,6 +16,14 @@ export function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById(`screen-${id}`);
   if (el) el.classList.add('active');
+  // Persist so reload can restore the correct screen
+  // Don't persist auth screen — unauthenticated state is handled by Supabase
+  if (id !== 'auth') {
+    sessionStorage.setItem('activeScreen', id);
+  } else {
+    sessionStorage.removeItem('activeScreen');
+    sessionStorage.removeItem('gameSnapshot');
+  }
 }
 
 // ── Toast ──────────────────────────────────────────────────────────────────

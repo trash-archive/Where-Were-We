@@ -7,7 +7,7 @@ import { showScreen } from './utils.js';
 import { initAuth } from './authScreen.js';
 import { initDashboard } from './dashboardScreen.js';
 import { initLocationPicker } from './locationPicker.js';
-import { nextRound, submitGuess, invalidateGameMap, panGameMap } from './game.js';
+import { nextRound, submitGuess, invalidateGameMap, panGameMap, clearSnapshot, quitGame } from './game.js';
 import { startSoloGame, joinRoomByCode } from './dashboardScreen.js';
 
 // ── Render all screens ────────────────────────────────────────────────────
@@ -115,59 +115,91 @@ document.getElementById('app').innerHTML = `
       Where Were We
     </div>
     <div class="navbar-right">
-      <span id="nav-username" class="text-small text-muted"></span>
-      <button class="btn btn-ghost btn-sm" id="nav-signout-btn">Sign out</button>
+      <div class="nav-user" id="nav-user">
+        <button class="nav-user-btn" id="nav-user-btn">
+          <div class="nav-user-avatar" id="nav-user-avatar">?</div>
+          <span class="nav-user-name" id="nav-username"></span>
+          <svg class="nav-user-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="nav-dropdown" id="nav-dropdown">
+          <div class="nav-dropdown-header">
+            <div class="nav-dropdown-name" id="nav-dropdown-name"></div>
+            <div class="nav-dropdown-email" id="nav-dropdown-email"></div>
+          </div>
+          <button class="nav-dropdown-item danger" id="nav-signout-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Sign out
+          </button>
+        </div>
+      </div>
     </div>
   </nav>
   <div class="dashboard-layout">
-    <div class="dashboard-header">
-      <div class="dashboard-greeting" id="dash-greeting">Welcome back</div>
-      <div class="dashboard-sub">Upload photos and guess where they were taken</div>
+
+    <!-- Play hero -->
+    <div class="play-hero">
+      <div class="play-hero-text">
+        <div class="play-hero-greeting" id="play-hero-greeting">Welcome back</div>
+        <div class="play-hero-title">Ready to guess?</div>
+        <div class="play-hero-sub" id="play-hero-sub">Upload photos with GPS and start playing</div>
+      </div>
+      <div class="play-hero-actions">
+        <button class="btn-play-solo" id="dash-play-btn" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Play Solo
+        </button>
+        <button class="btn-play-multi" id="dash-room-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Multiplayer
+        </button>
+      </div>
     </div>
+
+    <!-- Stats -->
     <div class="stats-row" id="dash-stats">
-      <div class="stat-item card-flat">
+      <div class="stat-item">
         <div class="stat-num" id="stat-photos">0</div>
         <div class="stat-label">Photos</div>
       </div>
-      <div class="stat-item card-flat">
+      <div class="stat-item">
+        <div class="stat-num" id="stat-gps">0</div>
+        <div class="stat-label">With GPS</div>
+      </div>
+      <div class="stat-item">
         <div class="stat-num" id="stat-games">0</div>
         <div class="stat-label">Games played</div>
       </div>
-      <div class="stat-item card-flat">
+      <div class="stat-item">
         <div class="stat-num" id="stat-best">&mdash;</div>
         <div class="stat-label">Best score</div>
       </div>
     </div>
+
+    <!-- Photos -->
     <div class="section">
       <div class="section-header">
         <div class="section-title">Your Photos</div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-secondary btn-sm" id="dash-play-btn" disabled>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Play Solo
-          </button>
-          <button class="btn btn-primary btn-sm" id="dash-room-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            Multiplayer
-          </button>
-        </div>
+        <span id="dash-photo-count" class="text-small text-muted"></span>
       </div>
       <div class="upload-zone" id="dash-drop-zone">
         <div class="upload-zone-icon">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
         </div>
         <div class="upload-zone-title">Drop photos here or click to browse</div>
-        <div class="upload-zone-sub">JPEG, PNG, WebP, GIF, HEIC &mdash; max 20 MB each &middot; GPS auto-detected</div>
+        <div class="upload-zone-sub">JPEG, PNG, WebP, HEIC &mdash; max 20 MB &middot; GPS auto-detected</div>
       </div>
       <input type="file" id="dash-file-input" multiple accept="image/*" style="display:none">
-      <div id="dash-photo-grid" class="photo-grid" style="margin-top:16px;"></div>
+      <div id="dash-photo-grid" class="photo-grid" style="margin-top:14px;"></div>
+      <div id="dash-pagination" class="pagination" style="display:none;"></div>
     </div>
+
+    <!-- Rooms -->
     <div class="section">
       <div class="section-header">
         <div class="section-title">Multiplayer Rooms</div>
         <button class="btn btn-secondary btn-sm" id="dash-join-btn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-          Join Room
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Join with Code
         </button>
       </div>
       <div id="dash-rooms-list" class="card">
@@ -180,6 +212,7 @@ document.getElementById('app').innerHTML = `
         </div>
       </div>
     </div>
+
   </div>
 </div>
 
@@ -253,7 +286,15 @@ document.getElementById('app').innerHTML = `
       </div>
     </div>
     <div class="game-nav-right">
+      <div class="game-players-pill hidden" id="game-players-pill">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span id="game-players-count">0</span>
+      </div>
       <div class="game-score-pill" id="game-score-display">0 pts</div>
+      <button class="game-quit-btn hidden" id="game-quit-btn" title="Leave game">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Leave
+      </button>
     </div>
   </nav>
   <div class="game-map-backdrop" id="game-map-backdrop"></div>
@@ -383,6 +424,37 @@ document.getElementById('app').innerHTML = `
     </div>
   </div>
 </div>
+<!-- QUIT CONFIRM MODAL -->
+<div id="quit-confirm-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title" id="quit-modal-title">Leave game?</div>
+    </div>
+    <div class="modal-body">
+      <p id="quit-modal-body" style="font-size:14px;color:var(--gray-500);line-height:1.6;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="quit-modal-cancel">Stay</button>
+      <button class="btn btn-danger" id="quit-modal-confirm">Leave</button>
+    </div>
+  </div>
+</div>
+
+<!-- HOST ENDED MODAL -->
+<div id="host-ended-modal" class="modal-overlay">
+  <div class="modal-box" style="text-align:center;">
+    <div class="modal-body" style="padding:40px 32px 28px;">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--red-light);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:8px;">Game ended</div>
+      <p style="font-size:14px;color:var(--gray-500);line-height:1.6;margin-bottom:0;">The host left the game. Thanks for playing!</p>
+    </div>
+    <div class="modal-footer" style="justify-content:center;padding-bottom:28px;">
+      <button class="btn btn-primary" id="host-ended-ok">Back to Dashboard</button>
+    </div>
+  </div>
+</div>
 `;
 
 // ── Init controllers ──────────────────────────────────────────────────────
@@ -393,8 +465,23 @@ initDashboard();
 // ── Game buttons ──────────────────────────────────────────────────────────
 document.getElementById('submit-guess-btn').addEventListener('click', () => { closeMapDrawer(); submitGuess(); });
 document.getElementById('rr-next-btn').addEventListener('click', () => { closeMapDrawer(); nextRound(); });
-document.getElementById('final-dashboard-btn').addEventListener('click', () => showScreen('dashboard'));
+document.getElementById('final-dashboard-btn').addEventListener('click', () => { clearSnapshot(); showScreen('dashboard'); });
 document.getElementById('final-play-again-btn').addEventListener('click', startSoloGame);
+
+// ── Quit / host-ended modals ────────────────────────────────────────────────────
+document.getElementById('game-quit-btn').addEventListener('click', () => quitGame('confirm'));
+document.getElementById('quit-modal-cancel').addEventListener('click', () => {
+  document.getElementById('quit-confirm-modal').classList.remove('open');
+});
+document.getElementById('quit-modal-confirm').addEventListener('click', () => {
+  document.getElementById('quit-confirm-modal').classList.remove('open');
+  quitGame('execute');
+});
+document.getElementById('host-ended-ok').addEventListener('click', () => {
+  document.getElementById('host-ended-modal').classList.remove('open');
+  clearSnapshot();
+  showScreen('dashboard');
+});
 
 // ── Mobile map drawer ─────────────────────────────────────────────────────
 function openMapDrawer() {
