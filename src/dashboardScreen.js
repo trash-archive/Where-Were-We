@@ -560,7 +560,11 @@ function wireEvents() {
   });
   document.getElementById('room-copy-btn').addEventListener('click', () => {
     const code = document.getElementById('room-code-value').textContent.trim();
-    navigator.clipboard.writeText(code).then(() => toast('Code copied!', 'success'));
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(() => toast('Code copied!', 'success')).catch(() => fallbackCopy(code));
+    } else {
+      fallbackCopy(code);
+    }
   });
   document.getElementById('room-start-btn').addEventListener('click', async () => {
     if (!currentRoom) return;
@@ -613,6 +617,17 @@ function wireEvents() {
   });
 
   // Auto-join from URL ?join=CODE is handled by the join modal in main.js
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try { document.execCommand('copy'); toast('Code copied!', 'success'); } catch { toast('Copy failed — share the code manually.', 'error'); }
+  document.body.removeChild(ta);
 }
 
 export function showLoading(show, current = 0, total = 0) {

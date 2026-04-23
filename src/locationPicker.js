@@ -48,7 +48,7 @@ export function openLocationPicker(imageName, initialLat = null, initialLng = nu
       }
 
       // Single invalidateSize call after layout settles
-      setTimeout(() => pickerMap.invalidateSize(), 50);
+      setTimeout(() => pickerMap.invalidateSize(), 200);
     });
   });
 }
@@ -151,6 +151,7 @@ function showDropdown(features) {
     nameSpan.textContent = formatPhotonLabel(p);
     li.appendChild(nameSpan);
     li.addEventListener('mousedown', (e) => { e.preventDefault(); selectResult(f); });
+    li.addEventListener('touchend', (e) => { e.preventDefault(); selectResult(f); });
     ul.appendChild(li);
   });
   wrap.appendChild(ul);

@@ -31,7 +31,7 @@ function initGameMap() {
     gameMap = getOrCreateMap('leaflet-map', { zoom: 2, zoomControl: true });
     gameMap.on('click', onMapClick);
     gameMap.invalidateSize();
-  }, 80);
+  }, 150);
 }
 
 function onMapClick(e) {
@@ -173,7 +173,7 @@ export function nextRound() {
     setTimeout(() => {
       if (gameMap) gameMap.invalidateSize();
       loadRound();
-    }, 80);
+    }, 150);
   }
 }
 

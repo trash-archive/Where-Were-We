@@ -502,7 +502,7 @@ document.getElementById('host-ended-ok').addEventListener('click', () => {
 function openMapDrawer() {
   document.getElementById('game-map-panel').classList.add('open');
   document.getElementById('game-map-backdrop').classList.add('open');
-  setTimeout(() => invalidateGameMap(), 300);
+  setTimeout(() => invalidateGameMap(), 350);
 }
 function closeMapDrawer() {
   document.getElementById('game-map-panel').classList.remove('open');
@@ -570,6 +570,7 @@ function showGameSearchDropdown(features) {
     nameSpan.textContent = formatPhotonLabel(p);
     li.appendChild(nameSpan);
     li.addEventListener('mousedown', (e) => { e.preventDefault(); selectGameSearchResult(f); });
+    li.addEventListener('touchend', (e) => { e.preventDefault(); selectGameSearchResult(f); });
     ul.appendChild(li);
   });
   wrap.appendChild(ul);

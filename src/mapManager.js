@@ -63,6 +63,7 @@ export function getOrCreateMap(elementId, options = {}) {
     zoomControl: options.zoomControl ?? true,
     attributionControl: false,
     preferCanvas: true,
+    tap: false,
     ...options.leafletOpts,
   });
 

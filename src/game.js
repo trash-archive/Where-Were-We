@@ -142,7 +142,7 @@ function subscribeGameRoom() {
       } else {
         state.hasGuessed = false;
         showScreen('game');
-        setTimeout(() => { if (state.gameMap) state.gameMap.invalidateSize(); loadRound(); }, 80);
+        setTimeout(() => { if (state.gameMap) state.gameMap.invalidateSize(); loadRound(); }, 150);
       }
       return;
     }
@@ -191,7 +191,7 @@ function initGameMap() {
     state.gameMap = getOrCreateMap('game-leaflet-map', { zoom: 2 });
     state.gameMap.on('click', onMapClick);
     state.gameMap.invalidateSize();
-  }, 80);
+  }, 150);
 }
 
 function makePinIcon(color, inner) {
@@ -422,7 +422,7 @@ export async function nextRound() {
   state.hasGuessed = false;
   saveSnapshot('game');
   showScreen('game');
-  setTimeout(() => { if (state.gameMap) state.gameMap.invalidateSize(); loadRound(); }, 80);
+  setTimeout(() => { if (state.gameMap) state.gameMap.invalidateSize(); loadRound(); }, 150);
 }
 
 // ── Final Screen ──────────────────────────────────────────────────────────
