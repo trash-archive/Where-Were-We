@@ -4,7 +4,7 @@
  * Opens a full Leaflet map — user clicks to set pin, confirms.
  */
 
-import { getOrCreateMap, destroyMap } from './utils.js';
+import { getOrCreateMap } from './utils.js';
 import { makePinIcon } from './game.js';
 
 let pickerMap = null;
@@ -13,42 +13,42 @@ let pickerResolve = null;
 let currentLat = null;
 let currentLng = null;
 
-/**
- * Open the location picker modal.
- * @param {string} imageName - shown in modal subtitle
- * @param {number|null} initialLat - optional pre-set lat
- * @param {number|null} initialLng - optional pre-set lng
- * @returns {Promise<{lat, lng}|null>} resolved with coords or null if cancelled
- */
 export function openLocationPicker(imageName, initialLat = null, initialLng = null) {
   return new Promise((resolve) => {
     pickerResolve = resolve;
     currentLat = initialLat;
     currentLng = initialLng;
 
-    // Set image name
     document.getElementById('picker-image-name').textContent = imageName ?? 'Unnamed photo';
-
-    // Open modal
     document.getElementById('map-picker-modal').classList.add('open');
 
-    // Init map after modal is visible
     requestAnimationFrame(() => {
-      pickerMap = getOrCreateMap('location-picker-map', {
-        zoom: initialLat ? 8 : 2,
-        center: initialLat ? [initialLat, initialLng] : [20, 0],
-        leafletOpts: {},
-      });
+      // Reuse existing map instance — only create once
+      if (!pickerMap) {
+        pickerMap = getOrCreateMap('location-picker-map', {
+          zoom: initialLat ? 8 : 2,
+          center: initialLat ? [initialLat, initialLng] : [20, 0],
+        });
+        pickerMap.on('click', onMapClick);
+      } else {
+        // Already exists — just reposition
+        pickerMap.setView(
+          initialLat ? [initialLat, initialLng] : [20, 0],
+          initialLat ? 8 : 2,
+          { animate: false }
+        );
+      }
 
-      pickerMap.on('click', onMapClick);
+      // Clear previous marker
+      if (pickerMarker) { pickerMap.removeLayer(pickerMarker); pickerMarker = null; }
 
-      // Place existing marker if coords present
       if (initialLat && initialLng) {
         placeMarker(L.latLng(initialLat, initialLng));
         updateCoordsDisplay();
       }
 
-      setTimeout(() => pickerMap.invalidateSize(), 100);
+      // Single invalidateSize call after layout settles
+      setTimeout(() => pickerMap.invalidateSize(), 50);
     });
   });
 }
@@ -77,29 +77,15 @@ function updateCoordsDisplay() {
 }
 
 export function initLocationPicker() {
-  // Confirm button
   document.getElementById('picker-confirm-btn').addEventListener('click', () => {
-    if (currentLat !== null && currentLng !== null) {
-      closePicker({ lat: currentLat, lng: currentLng });
-    }
+    if (currentLat !== null && currentLng !== null) closePicker({ lat: currentLat, lng: currentLng });
   });
-
-  // Cancel button
-  document.getElementById('picker-cancel-btn').addEventListener('click', () => {
-    closePicker(null);
-  });
-
-  // Close X
-  document.getElementById('picker-close-btn').addEventListener('click', () => {
-    closePicker(null);
-  });
-
-  // Close on overlay click
+  document.getElementById('picker-cancel-btn').addEventListener('click', () => closePicker(null));
+  document.getElementById('picker-close-btn').addEventListener('click', () => closePicker(null));
   document.getElementById('map-picker-modal').addEventListener('click', (e) => {
     if (e.target === document.getElementById('map-picker-modal')) closePicker(null);
   });
 
-  // Search box — geocoding via Nominatim (free)
   const searchInput = document.getElementById('picker-search');
   let searchTimer = null;
   searchInput.addEventListener('input', () => {
@@ -127,15 +113,12 @@ async function geocodeSearch(query) {
       document.getElementById('picker-confirm-btn').disabled = false;
       document.getElementById('picker-hint').classList.add('hidden');
     }
-  } catch {
-    // Nominatim unavailable — silently fail
-  }
+  } catch {}
 }
 
 function closePicker(result) {
-  destroyMap('location-picker-map');
-  pickerMap = null;
-  pickerMarker = null;
+  // Don't destroy the map — keep it alive for next open (much faster)
+  if (pickerMarker) { pickerMap.removeLayer(pickerMarker); pickerMarker = null; }
   currentLat = null;
   currentLng = null;
   document.getElementById('map-picker-modal').classList.remove('open');

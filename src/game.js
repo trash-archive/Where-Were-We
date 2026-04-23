@@ -26,6 +26,10 @@ const state = {
   hasGuessed: false,    // has this player submitted for the current round
 };
 
+// Tracks the remaining unplayed photos for solo mode across play-again sessions
+let _soloPhotoPool = [];
+let _soloAllPhotos = [];
+
 // ── Snapshot helpers ──────────────────────────────────────────────────────
 function saveSnapshot(screen) {
   const snap = {
@@ -49,19 +53,45 @@ export function clearSnapshot() {
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────
-export function startSoloGame(photos) {
+export function startSoloGame(photos, userId = null) {
+  if (photos) {
+    _soloAllPhotos = [...photos];
+    _soloPhotoPool = shuffle([...photos]);
+  } else if (_soloPhotoPool.length === 0) {
+    const lastPlayed = state.photos[state.photos.length - 1];
+    _soloPhotoPool = shuffle([..._soloAllPhotos]);
+    if (_soloPhotoPool.length > 1 && lastPlayed && _soloPhotoPool[0].id === lastPlayed.id) {
+      _soloPhotoPool.push(_soloPhotoPool.shift());
+    }
+  }
+  const count = photos ? photos.length : _soloAllPhotos.length;
+  const selected = _soloPhotoPool.splice(0, count);
   Object.assign(state, {
-    photos: shuffle([...photos]),
+    photos: selected,
     currentRound: 0, totalScore: 0, roundResults: [],
     currentGuess: null, guessMarker: null, gameMap: null,
     roomId: null, isHost: false, roomData: null,
     unsubRoom: null, hasGuessed: false,
+    userId: userId ?? state.userId,
   });
   document.getElementById('game-players-pill')?.classList.add('hidden');
   document.getElementById('game-quit-btn')?.classList.remove('hidden');
   saveSnapshot('game');
   showScreen('game');
   requestAnimationFrame(() => { initGameMap(); loadRound(); });
+}
+
+// ── Play Again ────────────────────────────────────────────────────────────
+export function playAgain() {
+  if (state.roomId) {
+    // Multiplayer: host goes back to lobby to restart, guests go to dashboard
+    clearSnapshot();
+    sessionStorage.removeItem('activeRoomId');
+    showScreen(state.isHost ? 'room' : 'dashboard');
+  } else {
+    // Solo: continue cycling through the photo pool
+    startSoloGame(null);
+  }
 }
 
 export function startMultiplayerGame(photos, roomId, userId, userName, isHost, roomData) {
@@ -405,6 +435,9 @@ function showFinalScreen() {
   const avgDist = results.length ? results.reduce((s, r) => s + r.distKm, 0) / results.length : 0;
   const best = results.length ? Math.max(...results.map(r => r.score)) : 0;
 
+  // Persist game result to localStorage
+  if (state.userId && results.length) saveGameResult(state.userId, total);
+
   document.getElementById('final-total').textContent = total.toLocaleString();
   document.getElementById('final-avg-dist').textContent = formatDistance(avgDist);
   document.getElementById('final-best').textContent = best.toLocaleString();
@@ -567,5 +600,35 @@ export function quitGame(phase) {
 }
 
 export { makePinIcon };
-function shuffle(arr) { return arr.sort(() => Math.random() - 0.5); }
+
+// ── Local stats persistence ─────────────────────────────────────────────────
+function statsKey(userId) { return `wwwstats_${userId}`; }
+
+function saveGameResult(userId, score) {
+  try {
+    const key = statsKey(userId);
+    const existing = JSON.parse(localStorage.getItem(key) ?? '{"games":0,"best":0}');
+    existing.games = (existing.games ?? 0) + 1;
+    existing.best = Math.max(existing.best ?? 0, score);
+    localStorage.setItem(key, JSON.stringify(existing));
+  } catch {}
+}
+
+export function getGameStats(userId) {
+  try {
+    const raw = localStorage.getItem(statsKey(userId));
+    if (!raw) return { games: 0, best: null };
+    const { games, best } = JSON.parse(raw);
+    return { games: games ?? 0, best: best > 0 ? best : null };
+  } catch {
+    return { games: 0, best: null };
+  }
+}
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
 export { state as gameState };

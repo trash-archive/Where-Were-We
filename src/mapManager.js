@@ -3,24 +3,25 @@
  * Manages Leaflet map instances, preventing duplicate-init bugs.
  */
 
-const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILE_ATTR = '© OpenStreetMap contributors';
+const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>';
 
-const maps = {}; // keyed by element id
+const TILE_OPTIONS = {
+  maxZoom: 19,
+  attribution: TILE_ATTR,
+  updateWhenIdle: false,
+  updateWhenZooming: false,
+  keepBuffer: 4,
+};
 
-/**
- * Create or recycle a Leaflet map inside `elementId`.
- * Returns the map instance.
- */
+const maps = {};
+
 export function getOrCreateMap(elementId, options = {}) {
-  // Destroy stale instance if element was re-rendered
   const el = document.getElementById(elementId);
   if (!el) throw new Error(`Map element #${elementId} not found`);
 
   if (maps[elementId]) {
-    try {
-      maps[elementId].remove();
-    } catch {}
+    try { maps[elementId].remove(); } catch {}
     delete maps[elementId];
   }
 
@@ -29,10 +30,11 @@ export function getOrCreateMap(elementId, options = {}) {
     zoom: options.zoom ?? 2,
     zoomControl: options.zoomControl ?? true,
     attributionControl: false,
+    preferCanvas: true,
     ...options.leafletOpts,
   });
 
-  L.tileLayer(TILE_URL, { maxZoom: 18, attribution: TILE_ATTR }).addTo(map);
+  L.tileLayer(TILE_URL, TILE_OPTIONS).addTo(map);
 
   maps[elementId] = map;
   return map;

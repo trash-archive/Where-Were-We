@@ -7,9 +7,8 @@ import { showScreen } from './utils.js';
 import { initAuth } from './authScreen.js';
 import { initDashboard } from './dashboardScreen.js';
 import { initLocationPicker } from './locationPicker.js';
-import { nextRound, submitGuess, invalidateGameMap, panGameMap, clearSnapshot, quitGame } from './game.js';
+import { nextRound, submitGuess, invalidateGameMap, panGameMap, clearSnapshot, quitGame, playAgain } from './game.js';
 import { startSoloGame, joinRoomByCode } from './dashboardScreen.js';
-
 // ── Render all screens ────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
 
@@ -155,23 +154,25 @@ document.getElementById('app').innerHTML = `
       </div>
     </div>
 
-    <!-- Stats -->
-    <div class="stats-row" id="dash-stats">
-      <div class="stat-item">
-        <div class="stat-num" id="stat-photos">0</div>
-        <div class="stat-label">Photos</div>
+    <!-- Rooms -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">Multiplayer Rooms</div>
+        <button class="btn btn-secondary btn-sm" id="dash-join-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Join with Code
+        </button>
       </div>
-      <div class="stat-item">
-        <div class="stat-num" id="stat-gps">0</div>
-        <div class="stat-label">With GPS</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-num" id="stat-games">0</div>
-        <div class="stat-label">Games played</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-num" id="stat-best">&mdash;</div>
-        <div class="stat-label">Best score</div>
+      <div class="card rooms-scroll-card">
+        <div id="dash-rooms-list">
+          <div class="empty-state">
+            <div class="empty-state-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div class="empty-state-title">No active rooms</div>
+            <div class="empty-state-sub">Create one or join with a code</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -191,26 +192,6 @@ document.getElementById('app').innerHTML = `
       <input type="file" id="dash-file-input" multiple accept="image/*" style="display:none">
       <div id="dash-photo-grid" class="photo-grid" style="margin-top:14px;"></div>
       <div id="dash-pagination" class="pagination" style="display:none;"></div>
-    </div>
-
-    <!-- Rooms -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-title">Multiplayer Rooms</div>
-        <button class="btn btn-secondary btn-sm" id="dash-join-btn">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-          Join with Code
-        </button>
-      </div>
-      <div id="dash-rooms-list" class="card">
-        <div class="empty-state">
-          <div class="empty-state-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          </div>
-          <div class="empty-state-title">No active rooms</div>
-          <div class="empty-state-sub">Create one or join with a code</div>
-        </div>
-      </div>
     </div>
 
   </div>
@@ -293,7 +274,7 @@ document.getElementById('app').innerHTML = `
       <div class="game-score-pill" id="game-score-display">0 pts</div>
       <button class="game-quit-btn hidden" id="game-quit-btn" title="Leave game">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        Leave
+        <span class="game-quit-label">Leave</span>
       </button>
     </div>
   </nav>
@@ -466,7 +447,7 @@ initDashboard();
 document.getElementById('submit-guess-btn').addEventListener('click', () => { closeMapDrawer(); submitGuess(); });
 document.getElementById('rr-next-btn').addEventListener('click', () => { closeMapDrawer(); nextRound(); });
 document.getElementById('final-dashboard-btn').addEventListener('click', () => { clearSnapshot(); showScreen('dashboard'); });
-document.getElementById('final-play-again-btn').addEventListener('click', startSoloGame);
+document.getElementById('final-play-again-btn').addEventListener('click', playAgain);
 
 // ── Quit / host-ended modals ────────────────────────────────────────────────────
 document.getElementById('game-quit-btn').addEventListener('click', () => quitGame('confirm'));

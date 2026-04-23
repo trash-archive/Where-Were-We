@@ -51,16 +51,13 @@ async function refreshPhotos() {
 }
 
 function updateStats() {
-  const total = userPhotos.length;
   const withGps = userPhotos.filter(p => p.lat !== null).length;
-  document.getElementById('stat-photos').textContent = total;
-  document.getElementById('stat-gps').textContent = withGps;
   document.getElementById('dash-play-btn').disabled = withGps < 1;
   document.getElementById('play-hero-sub').textContent = withGps > 0
     ? `${withGps} photo${withGps !== 1 ? 's' : ''} ready to play`
     : 'Upload photos with GPS to start playing';
   const countEl = document.getElementById('dash-photo-count');
-  if (countEl) countEl.textContent = total > 0 ? `${total} photo${total !== 1 ? 's' : ''}` : '';
+  if (countEl) countEl.textContent = userPhotos.length > 0 ? `${userPhotos.length} photo${userPhotos.length !== 1 ? 's' : ''}` : '';
 }
 
 // ── Rejoin active room after page reload ─────────────────────────────────
@@ -369,7 +366,7 @@ export function startSoloGame() {
     toast('No photos with location data. Set locations first.', 'error');
     return;
   }
-  startGame(playable);
+  startGame(playable, currentUser.id);
 }
 
 // ── Multiplayer ────────────────────────────────────────────────────────────
