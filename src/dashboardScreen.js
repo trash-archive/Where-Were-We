@@ -553,8 +553,12 @@ function wireEvents() {
   // dash-join-btn is handled by main.js (opens the join modal)
 
   // Room lobby
-  document.getElementById('room-back-btn').addEventListener('click', () => {
-    if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+  document.getElementById('room-back-btn').addEventListener('click', async () => {
+    if (currentRoom) {
+      await leaveRoom(currentRoom.id, currentUser.id).catch(() => {});
+      if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+      currentRoom = null;
+    }
     clearSnapshot();
     showScreen('dashboard');
   });
