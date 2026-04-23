@@ -319,6 +319,22 @@ document.getElementById('app').innerHTML = `
         <div class="result-loc"><span>Actual</span><span id="rr-actual-coords">&mdash;</span></div>
       </div>
     </div>
+
+    <!-- Multiplayer scoreboard (hidden in solo) -->
+    <div class="rr-mp-wrap hidden">
+      <div class="rr-mp-title">Round Scores</div>
+      <div class="rr-mp-table-wrap">
+        <table class="rr-mp-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Player</th><th>Distance</th><th>Round</th><th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="rr-mp-scoreboard"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="result-mini-map">
       <div id="mini-result-map" style="width:100%;height:100%;"></div>
     </div>
@@ -354,6 +370,13 @@ document.getElementById('app').innerHTML = `
     </div>
     <div class="breakdown-title">Round Breakdown</div>
     <div class="breakdown-list" id="final-breakdown"></div>
+
+    <!-- Multiplayer leaderboard (hidden in solo) -->
+    <div class="final-mp-wrap hidden">
+      <div class="breakdown-title">Final Leaderboard</div>
+      <div class="breakdown-list" id="final-mp-leaderboard"></div>
+    </div>
+
     <div class="final-actions">
       <button class="btn btn-secondary" id="final-play-again-btn">Play Again</button>
       <button class="btn btn-primary" id="final-dashboard-btn">Back to Dashboard</button>

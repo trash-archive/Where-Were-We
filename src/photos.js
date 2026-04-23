@@ -6,8 +6,6 @@
  */
 
 import { supabase, PHOTO_BUCKET } from './supabase.js';
-import { extractGPS } from './exif.js';
-import heic2any from 'heic2any';
 
 const MAX_SIZE_MB = 20;
 
@@ -33,6 +31,7 @@ export async function uploadPhoto(file, userId, lat = null, lng = null) {
   let finalLat = lat;
   let finalLng = lng;
   if (finalLat === null || finalLng === null) {
+    const { extractGPS } = await import('./exif.js');
     const gps = await extractGPS(file);
     if (gps) { finalLat = gps.lat; finalLng = gps.lng; }
   }
@@ -45,6 +44,7 @@ export async function uploadPhoto(file, userId, lat = null, lng = null) {
   const needsConversion = !BROWSER_RENDERABLE.has(uploadMime) || isHeicFile(file);
   if (needsConversion) {
     try {
+      const { default: heic2any } = await import('heic2any');
       const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
       const converted = Array.isArray(blob) ? blob[0] : blob;
       const newName = file.name.replace(/\.[^.]+$/, '.jpg');

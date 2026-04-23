@@ -5,20 +5,22 @@
 
 import { signIn, signUp, onAuthChange, getDisplayName } from './auth.js';
 import { showScreen } from './utils.js';
-import { loadDashboard } from './dashboardScreen.js';
+import { loadDashboard, rejoinActiveRoom } from './dashboardScreen.js';
 
 let isSignUp = false;
 let initialised = false;
 
 export function initAuth() {
-  onAuthChange((event, user) => {
+  onAuthChange(async (event, user) => {
     if (event === 'INITIAL_SESSION') {
-      // Fires once on page load — route to the right starting screen
       if (!initialised) {
         initialised = true;
         if (user) {
           showScreen('dashboard');
-          loadDashboard(user);
+          await loadDashboard(user);
+          // Rejoin active room if we were mid-game before reload
+          const activeRoomId = sessionStorage.getItem('activeRoomId');
+          if (activeRoomId) await rejoinActiveRoom(activeRoomId);
         } else {
           showScreen('auth');
         }
@@ -27,7 +29,6 @@ export function initAuth() {
     }
 
     if (event === 'SIGNED_IN') {
-      // Only navigate if we're actually on the auth screen (real login, not tab refocus)
       const onAuthScreen = document.getElementById('screen-auth')?.classList.contains('active');
       if (onAuthScreen) {
         showScreen('dashboard');
@@ -38,10 +39,10 @@ export function initAuth() {
 
     if (event === 'SIGNED_OUT') {
       initialised = false;
+      sessionStorage.removeItem('activeRoomId');
       showScreen('auth');
       return;
     }
-    // TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY — ignore
   });
 
   document.getElementById('auth-toggle-link').addEventListener('click', toggleMode);

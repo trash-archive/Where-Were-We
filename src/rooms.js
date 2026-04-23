@@ -19,10 +19,10 @@ export async function createRoom(hostUserId, hostName, settings = {}) {
     .insert({
       code,
       host_id: hostUserId,
-      status: 'waiting',       // waiting | playing | finished
+      status: 'waiting',
       rounds: settings.rounds ?? 5,
       photo_ids: settings.photoIds ?? [],
-      players: [{ id: hostUserId, name: hostName, score: 0, ready: true, is_host: true }],
+      players: [{ id: hostUserId, name: hostName, score: 0, ready: true, is_host: true, photo_ids: settings.photoIds ?? [] }],
     })
     .select()
     .single();
@@ -34,8 +34,7 @@ export async function createRoom(hostUserId, hostName, settings = {}) {
 /**
  * Join an existing room by code.
  */
-export async function joinRoom(code, userId, userName) {
-  // Fetch room
+export async function joinRoom(code, userId, userName, photoIds = []) {
   const { data: room, error: fetchErr } = await supabase
     .from('rooms')
     .select('*')
@@ -47,7 +46,10 @@ export async function joinRoom(code, userId, userName) {
   if (room.players.length >= MAX_PLAYERS) throw new Error(`Room is full (max ${MAX_PLAYERS} players).`);
   if (room.players.find(p => p.id === userId)) return room; // already in
 
-  const updatedPlayers = [...room.players, { id: userId, name: userName, score: 0, ready: false, is_host: false }];
+  const updatedPlayers = [
+    ...room.players,
+    { id: userId, name: userName, score: 0, ready: false, is_host: false, photo_ids: photoIds },
+  ];
 
   const { data, error } = await supabase
     .from('rooms')
@@ -63,47 +65,67 @@ export async function joinRoom(code, userId, userName) {
 /**
  * Start the game (host only). Shuffles photo_ids order.
  */
-export async function startRoom(roomId, photoIds) {
-  // Fetch the full photo records so we can embed them in the room
-  // This way guests don't need to query the photos table (which is RLS-protected)
+export async function startRoom(roomId, roundCount) {
+  // Fetch the room to get all players and their photo_ids
+  const { data: room, error: roomErr } = await supabase
+    .from('rooms').select('players').eq('id', roomId).single();
+  if (roomErr) throw roomErr;
+
+  // Pool all players' photo IDs
+  const allPhotoIds = (room.players ?? []).flatMap(p => p.photo_ids ?? []);
+  if (!allPhotoIds.length) throw new Error('No photos with location data found in this room.');
+
+  // Fetch the full photo records (host can read their own; RLS allows this)
   const { data: photos, error: photoErr } = await supabase
     .from('photos')
     .select('id, public_url, lat, lng, original_name')
-    .in('id', photoIds);
+    .in('id', allPhotoIds);
   if (photoErr) throw photoErr;
 
-  const shuffled = [...photos].sort(() => Math.random() - 0.5);
+  // Shuffle and cap at the selected round count
+  const shuffled = [...photos].sort(() => Math.random() - 0.5).slice(0, roundCount);
+
   const { error } = await supabase
     .from('rooms')
-    .update({ status: 'playing', photo_ids: photoIds, photos_data: shuffled, current_round: 0 })
+    .update({ status: 'playing', photo_ids: shuffled.map(p => p.id), photos_data: shuffled, current_round: 0 })
     .eq('id', roomId);
   if (error) throw error;
 }
 
 /**
  * Submit a guess for a round.
+ * Marks the player as having guessed this round.
  */
 export async function submitRoomGuess(roomId, userId, round, guess, distKm, score) {
-  const { data: room } = await supabase.from('rooms').select('players,guesses').eq('id', roomId).single();
-  const guesses = room.guesses ?? [];
-  guesses.push({ user_id: userId, round, lat: guess.lat, lng: guess.lng, dist_km: distKm, score });
+  const { data: room, error: fetchErr } = await supabase
+    .from('rooms').select('players,guesses').eq('id', roomId).single();
+  if (fetchErr) throw fetchErr;
 
-  // Update player's cumulative score
+  const guesses = room.guesses ?? [];
+  // Remove any previous guess from this player for this round (re-submit guard)
+  const filtered = guesses.filter(g => !(g.user_id === userId && g.round === round));
+  filtered.push({ user_id: userId, round, lat: guess.lat, lng: guess.lng, dist_km: distKm, score });
+
+  // Mark player as guessed this round
   const players = room.players.map(p =>
-    p.id === userId ? { ...p, score: (p.score ?? 0) + score } : p
+    p.id === userId
+      ? { ...p, score: (p.score ?? 0) + score, guessed: true }
+      : p
   );
 
-  const { error } = await supabase.from('rooms').update({ guesses, players }).eq('id', roomId);
+  const { error } = await supabase.from('rooms').update({ guesses: filtered, players }).eq('id', roomId);
   if (error) throw error;
 }
 
 /**
- * Advance to next round (host only).
+ * Advance to next round — resets all players' guessed flag.
  */
 export async function advanceRound(roomId, nextRound) {
+  const { data: room } = await supabase.from('rooms').select('players').eq('id', roomId).single();
+  const players = (room?.players ?? []).map(p => ({ ...p, guessed: false }));
   const { error } = await supabase
     .from('rooms')
-    .update({ current_round: nextRound })
+    .update({ current_round: nextRound, players })
     .eq('id', roomId);
   if (error) throw error;
 }
@@ -118,28 +140,26 @@ export async function finishRoom(roomId) {
 
 /**
  * Leave a room.
+ * If the host leaves, the room is deleted immediately — guests are notified via realtime DELETE event.
+ * If a guest leaves, they are removed from the players list.
  */
 export async function leaveRoom(roomId, userId) {
   const { data: room } = await supabase.from('rooms').select('players,host_id').eq('id', roomId).single();
   if (!room) return;
 
-  const players = room.players.filter(p => p.id !== userId);
-
-  if (players.length === 0) {
-    // Delete empty room
+  // Host leaving always deletes the room
+  if (room.host_id === userId) {
     await supabase.from('rooms').delete().eq('id', roomId);
     return;
   }
 
-  // Pass host to next player if host left
-  let updates = { players };
-  if (room.host_id === userId) {
-    const newHost = players[0];
-    newHost.is_host = true;
-    updates.host_id = newHost.id;
+  // Guest leaving — remove from players list
+  const players = room.players.filter(p => p.id !== userId);
+  if (players.length === 0) {
+    await supabase.from('rooms').delete().eq('id', roomId);
+  } else {
+    await supabase.from('rooms').update({ players }).eq('id', roomId);
   }
-
-  await supabase.from('rooms').update(updates).eq('id', roomId);
 }
 
 /**
@@ -149,8 +169,12 @@ export async function leaveRoom(roomId, userId) {
 export function subscribeToRoom(roomId, callback) {
   const channel = supabase
     .channel(`room:${roomId}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+    .on('postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
       (payload) => callback(payload.new))
+    .on('postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+      () => callback(null))
     .subscribe();
 
   return () => supabase.removeChannel(channel);

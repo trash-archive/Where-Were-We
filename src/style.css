@@ -280,10 +280,14 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
 .stat-label { font-size: 13px; color: var(--gray-500); }
 
 /* Rooms */
-.room-card { padding: 20px 24px; cursor: pointer; transition: background var(--transition); }
-.room-card:hover { background: var(--gray-50); }
+.room-card {
+  padding: 14px 20px; transition: background var(--transition);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
 .room-card + .room-card { border-top: 1px solid var(--gray-200); }
-.room-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.room-card:hover { background: var(--gray-50); }
+.room-card-info { flex: 1; min-width: 0; }
+.room-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .room-meta { font-size: 13px; color: var(--gray-500); display: flex; align-items: center; gap: 12px; }
 .room-players { display: flex; align-items: center; gap: 4px; }
 .room-status-dot { width: 7px; height: 7px; border-radius: 50%; }
@@ -812,4 +816,44 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
   .toast-container { bottom: 16px; right: 16px; left: 16px; }
   .toast { max-width: 100%; }
   .navbar { padding: 0 16px; }
+}
+
+/* ─────────────────────────────────────────────────────
+   MULTIPLAYER COMPETITION
+───────────────────────────────────────────────────── */
+
+/* Round scoreboard */
+.rr-mp-wrap { margin-bottom: 16px; }
+.rr-mp-title {
+  font-size: 12px; font-weight: 600; color: var(--gray-500);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;
+}
+.rr-mp-table-wrap { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid var(--gray-200); }
+.rr-mp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rr-mp-table th {
+  padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 600;
+  color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.05em;
+  background: var(--gray-50); border-bottom: 1px solid var(--gray-200);
+  white-space: nowrap;
+}
+.rr-mp-table td { padding: 10px 12px; border-bottom: 1px solid var(--gray-100); white-space: nowrap; }
+.rr-mp-table tr:last-child td { border-bottom: none; }
+.rr-mp-table .mp-rank { width: 28px; font-weight: 700; color: var(--gray-500); }
+.rr-mp-table .mp-name { font-weight: 500; min-width: 80px; }
+.rr-mp-table .mp-dist { color: var(--gray-500); }
+.rr-mp-table .mp-score { font-weight: 600; }
+.rr-mp-table .mp-total { font-weight: 700; color: var(--gray-900); }
+
+/* Highlight current player's row */
+.mp-row-me { background: var(--blue-light); }
+.mp-row-me td { color: var(--blue); }
+.mp-row-me .mp-total { color: var(--blue); font-weight: 700; }
+
+/* Final leaderboard */
+.final-mp-wrap { margin-bottom: 28px; }
+.mp-player-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  background: var(--gray-200); color: var(--gray-700);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
 }
