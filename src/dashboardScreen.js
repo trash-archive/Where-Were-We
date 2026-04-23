@@ -10,6 +10,7 @@ import { createRoom, joinRoom, subscribeToRoom, startRoom, leaveRoom } from './r
 import { openLocationPicker } from './locationPicker.js';
 import { startSoloGame as startGame, startMultiplayerGame as startMP, clearSnapshot } from './game.js';
 import { showScreen, toast, escapeHtml } from './utils.js';
+import { confirmDelete } from './modals.js';
 
 let currentUser = null;
 let userPhotos = [];
@@ -265,6 +266,23 @@ function renderPhotoGrid() {
     </div>
   `).join('');
 
+  // Toggle selected on mobile/tablet; action buttons handle their own clicks
+  grid.querySelectorAll('.photo-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        const isSelected = item.classList.contains('selected');
+        grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
+        if (!isSelected) item.classList.add('selected');
+      }
+    });
+  });
+  // Deselect when clicking outside the grid
+  document.addEventListener('click', (e) => {
+    if (!grid.contains(e.target)) {
+      grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
+    }
+  }, { capture: true });
+
   grid.querySelectorAll('[data-action="locate"]').forEach(btn => {
     btn.addEventListener('click', e => { e.stopPropagation(); handleLocate(btn.dataset.id); });
   });
@@ -323,7 +341,8 @@ async function handleLocate(photoId) {
 }
 
 async function handleDelete(photoId, storagePath) {
-  if (!confirm('Delete this photo?')) return;
+  const confirmed = await confirmDelete();
+  if (!confirmed) return;
   try {
     await deletePhoto(photoId, storagePath);
     toast('Photo deleted.', 'success');

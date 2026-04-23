@@ -7,6 +7,7 @@ import { showScreen } from './utils.js';
 import { initAuth } from './authScreen.js';
 import { initDashboard } from './dashboardScreen.js';
 import { initLocationPicker } from './locationPicker.js';
+import { initDeleteModal } from './modals.js';
 import { nextRound, submitGuess, invalidateGameMap, panGameMap, clearSnapshot, quitGame, playAgain } from './game.js';
 import { startSoloGame, joinRoomByCode } from './dashboardScreen.js';
 // ── Render all screens ────────────────────────────────────────────────────
@@ -421,6 +422,22 @@ document.getElementById('app').innerHTML = `
   </div>
 </div>
 
+<!-- DELETE CONFIRM MODAL -->
+<div id="delete-confirm-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Delete photo?</div>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px;color:var(--gray-500);line-height:1.6;">This will permanently remove the photo. This action cannot be undone.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="delete-modal-cancel">Cancel</button>
+      <button class="btn btn-danger" id="delete-modal-confirm">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- HOST ENDED MODAL -->
 <div id="host-ended-modal" class="modal-overlay">
   <div class="modal-box" style="text-align:center;">
@@ -440,6 +457,7 @@ document.getElementById('app').innerHTML = `
 
 // ── Init controllers ──────────────────────────────────────────────────────
 initLocationPicker();
+initDeleteModal();
 initAuth();
 initDashboard();
 
@@ -494,13 +512,12 @@ async function searchAndPan(query) {
   if (!query) return;
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
-      { headers: { 'Accept-Language': 'en' } }
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=en`
     );
-    const results = await res.json();
-    if (results.length > 0) {
-      const { lat, lon } = results[0];
-      panGameMap(parseFloat(lat), parseFloat(lon), 10);
+    const { features } = await res.json();
+    if (features.length > 0) {
+      const [lon, lat] = features[0].geometry.coordinates;
+      panGameMap(lat, lon, 10);
     }
   } catch { /* silently ignore */ }
 }

@@ -54,6 +54,7 @@ export function clearSnapshot() {
 
 // ── Start ─────────────────────────────────────────────────────────────────
 export function startSoloGame(photos, userId = null) {
+  const MAX_ROUNDS = 10;
   if (photos) {
     _soloAllPhotos = [...photos];
     _soloPhotoPool = shuffle([...photos]);
@@ -64,7 +65,7 @@ export function startSoloGame(photos, userId = null) {
       _soloPhotoPool.push(_soloPhotoPool.shift());
     }
   }
-  const count = photos ? photos.length : _soloAllPhotos.length;
+  const count = Math.min(_soloPhotoPool.length, MAX_ROUNDS);
   const selected = _soloPhotoPool.splice(0, count);
   Object.assign(state, {
     photos: selected,

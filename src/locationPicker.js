@@ -90,30 +90,86 @@ export function initLocationPicker() {
   let searchTimer = null;
   searchInput.addEventListener('input', () => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => geocodeSearch(searchInput.value.trim()), 600);
+    const q = searchInput.value.trim();
+    if (!q) { clearDropdown(); return; }
+    searchTimer = setTimeout(() => geocodeSearch(q), 400);
   });
   searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { clearTimeout(searchTimer); geocodeSearch(searchInput.value.trim()); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); moveFocus(-1); return; }
+    if (e.key === 'Escape')    { clearDropdown(); return; }
+    if (e.key === 'Enter')     { clearTimeout(searchTimer); geocodeSearch(searchInput.value.trim()); }
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.map-picker-search')) clearDropdown();
   });
 }
 
 async function geocodeSearch(query) {
   if (!query || query.length < 3) return;
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
-    const results = await res.json();
-    if (results.length > 0) {
-      const { lat, lon } = results[0];
-      const latlng = L.latLng(parseFloat(lat), parseFloat(lon));
-      pickerMap.setView(latlng, 10, { animate: true });
-      currentLat = latlng.lat;
-      currentLng = latlng.lng;
-      placeMarker(latlng);
-      updateCoordsDisplay();
-      document.getElementById('picker-confirm-btn').disabled = false;
-      document.getElementById('picker-hint').classList.add('hidden');
-    }
+    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=en`);
+    const { features } = await res.json();
+    showDropdown(features);
   } catch {}
+}
+
+let focusedIndex = -1;
+
+function showDropdown(features) {
+  clearDropdown();
+  if (!features.length) return;
+  const wrap = document.querySelector('.map-picker-search');
+  const ul = document.createElement('ul');
+  ul.className = 'picker-search-dropdown';
+  features.forEach((f) => {
+    const li = document.createElement('li');
+    li.className = 'picker-search-item';
+    const p = f.properties;
+    const parts = [p.name, p.city || p.town || p.village, p.country].filter(Boolean);
+    li.innerHTML = `<span class="psi-name">${parts.join(', ')}</span>`;
+    li.addEventListener('mousedown', (e) => { e.preventDefault(); selectResult(f); });
+    ul.appendChild(li);
+  });
+  wrap.appendChild(ul);
+  focusedIndex = -1;
+}
+
+function moveFocus(dir) {
+  const items = document.querySelectorAll('.picker-search-item');
+  if (!items.length) return;
+  items[focusedIndex]?.classList.remove('focused');
+  focusedIndex = Math.max(0, Math.min(items.length - 1, focusedIndex + dir));
+  items[focusedIndex].classList.add('focused');
+  items[focusedIndex].scrollIntoView({ block: 'nearest' });
+  // pressing Enter on a focused item
+  document.getElementById('picker-search').onkeydown = (e) => {
+    if (e.key === 'Enter' && focusedIndex >= 0) { e.preventDefault(); items[focusedIndex].dispatchEvent(new MouseEvent('mousedown')); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); moveFocus(-1); }
+    if (e.key === 'Escape')    { clearDropdown(); }
+  };
+}
+
+function selectResult(f) {
+  const [lon, lat] = f.geometry.coordinates;
+  const latlng = L.latLng(lat, lon);
+  pickerMap.setView(latlng, 13, { animate: true });
+  currentLat = lat;
+  currentLng = lon;
+  placeMarker(latlng);
+  updateCoordsDisplay();
+  document.getElementById('picker-confirm-btn').disabled = false;
+  document.getElementById('picker-hint').classList.add('hidden');
+  const p = f.properties;
+  const parts = [p.name, p.city || p.town || p.village, p.country].filter(Boolean);
+  document.getElementById('picker-search').value = parts.join(', ');
+  clearDropdown();
+}
+
+function clearDropdown() {
+  document.querySelector('.picker-search-dropdown')?.remove();
+  focusedIndex = -1;
 }
 
 function closePicker(result) {
@@ -126,5 +182,6 @@ function closePicker(result) {
   document.getElementById('picker-hint').classList.remove('hidden');
   document.getElementById('picker-coords').innerHTML = 'Click the map to pick a location';
   document.getElementById('picker-search').value = '';
+  clearDropdown();
   if (pickerResolve) { pickerResolve(result); pickerResolve = null; }
 }
