@@ -4,7 +4,7 @@
  * and files from all major phone/camera manufacturers.
  */
 
-import * as exifr from 'exifr';
+import exifr from 'exifr';
 
 // Options shared across all parse attempts.
 // firstChunkSize: 0 forces exifr to read the entire file — critical for
