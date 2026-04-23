@@ -395,15 +395,18 @@ async function handleFiles(files) {
   });
   if (imageFiles.length === 0) return;
 
-  showLoading(true);
+  const total = imageFiles.length;
+  showLoading(true, 0, total);
   let uploaded = 0;
-  for (const file of imageFiles) {
+  for (let i = 0; i < imageFiles.length; i++) {
+    showLoading(true, i, total);
     try {
-      await uploadPhoto(file, currentUser.id);
+      await uploadPhoto(imageFiles[i], currentUser.id);
       uploaded++;
     } catch (e) {
-      toast(`Failed to upload ${file.name}: ${e.message}`, 'error');
+      toast(`Failed to upload ${imageFiles[i].name}: ${e.message}`, 'error');
     }
+    showLoading(true, i + 1, total);
   }
   showLoading(false);
   if (uploaded > 0) {
@@ -612,6 +615,18 @@ function wireEvents() {
   // Auto-join from URL ?join=CODE is handled by the join modal in main.js
 }
 
-export function showLoading(show) {
+export function showLoading(show, current = 0, total = 0) {
   document.getElementById('loading-overlay').classList.toggle('show', show);
+  const progress = document.getElementById('loading-progress');
+  const text = document.getElementById('loading-text');
+  if (!show || total <= 1) {
+    progress?.classList.add('hidden');
+    if (text) text.textContent = show ? 'Uploading…' : 'Loading…';
+    return;
+  }
+  progress?.classList.remove('hidden');
+  const pct = Math.round((current / total) * 100);
+  document.getElementById('loading-bar-fill').style.width = pct + '%';
+  document.getElementById('loading-counter').textContent = `${current} of ${total} photos`;
+  if (text) text.textContent = 'Uploading photos…';
 }

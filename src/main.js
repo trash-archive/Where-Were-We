@@ -16,7 +16,11 @@ document.getElementById('app').innerHTML = `
 <!-- LOADING OVERLAY -->
 <div id="loading-overlay" class="loading-overlay">
   <div class="spinner"></div>
-  <p class="loading-text">Loading&hellip;</p>
+  <p class="loading-text" id="loading-text">Loading&hellip;</p>
+  <div id="loading-progress" class="loading-progress hidden">
+    <div class="loading-bar-track"><div class="loading-bar-fill" id="loading-bar-fill"></div></div>
+    <p class="loading-counter" id="loading-counter"></p>
+  </div>
 </div>
 
 <!-- MAP LOCATION PICKER MODAL -->

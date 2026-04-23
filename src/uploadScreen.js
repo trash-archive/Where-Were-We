@@ -69,9 +69,12 @@ async function processFiles(files) {
   const imageFiles = files.filter(f => f.type.startsWith('image/'));
   if (imageFiles.length === 0) return;
 
-  showLoading(true);
+  const total = imageFiles.length;
+  showLoading(true, 0, total);
 
-  for (const file of imageFiles) {
+  for (let i = 0; i < imageFiles.length; i++) {
+    const file = imageFiles[i];
+    showLoading(true, i + 1, total);
     const gps = await extractGPS(file);
     state.images.push({
       id: generateId(),
@@ -186,8 +189,20 @@ function saveManualLocation() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-function showLoading(show) {
+function showLoading(show, current = 0, total = 0) {
   document.getElementById('loading-overlay').classList.toggle('show', show);
+  const progress = document.getElementById('loading-progress');
+  const text = document.getElementById('loading-text');
+  if (!show || total <= 1) {
+    progress?.classList.add('hidden');
+    if (text) text.textContent = show ? 'Reading photos\u2026' : 'Loading\u2026';
+    return;
+  }
+  progress?.classList.remove('hidden');
+  const pct = Math.round((current / total) * 100);
+  document.getElementById('loading-bar-fill').style.width = pct + '%';
+  document.getElementById('loading-counter').textContent = `${current} of ${total} photos`;
+  if (text) text.textContent = 'Reading photos\u2026';
 }
 
 function generateId() {
