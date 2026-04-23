@@ -7,6 +7,7 @@ import { state, resetGame } from './state.js';
 import { showScreen } from './router.js';
 import { getOrCreateMap, destroyMap } from './mapManager.js';
 import { haversineKm, distanceToScore, formatDistance } from './distance.js';
+import { toast } from './utils.js';
 
 let guessMarker = null;
 let gameMap = null;
@@ -15,7 +16,7 @@ let gameMap = null;
 export function startGame() {
   resetGame();
   if (state.gameImages.length === 0) {
-    alert('No photos with locations! Please add location data to at least one photo.');
+    toast('No photos with locations! Please add location data to at least one photo.', 'error');
     return;
   }
   showScreen('game');
@@ -64,7 +65,10 @@ function loadRound() {
   document.getElementById('progress-fill').style.width = `${(round / total) * 100}%`;
 
   // Photo
-  document.getElementById('game-photo').src = state.gameImages[round].url;
+  try {
+    const parsed = new URL(state.gameImages[round].url);
+    if (parsed.protocol === 'https:') document.getElementById('game-photo').src = state.gameImages[round].url;
+  } catch {}
 
   // Reset map state
   document.getElementById('submit-guess-btn').disabled = true;
@@ -99,7 +103,10 @@ export function submitGuess() {
 
 // ── Round Result ──────────────────────────────────────────────────────────
 function showRoundResult(img, guess, distKm, score) {
-  document.getElementById('result-photo').src = img.url;
+  try {
+    const parsed = new URL(img.url);
+    if (parsed.protocol === 'https:') document.getElementById('result-photo').src = img.url;
+  } catch {}
   document.getElementById('result-distance').textContent = formatDistance(distKm);
   document.getElementById('result-guess-loc').textContent =
     `${guess.lat.toFixed(4)}, ${guess.lng.toFixed(4)}`;
@@ -193,29 +200,48 @@ function showFinalScreen() {
 
   // Leaderboard — sorted by score descending
   const sorted = [...results].sort((a, b) => b.score - a.score);
-  document.getElementById('leaderboard').innerHTML = sorted.map((r, i) => {
-    const rankClass = i < 3 ? `rank-${i + 1}` : 'rank-n';
-    return `
-      <div class="lb-row">
-        <div class="rank-badge ${rankClass}">${i + 1}</div>
-        <img class="lb-thumb" src="${r.img.url}" alt="">
-        <div class="lb-info">
-          <div class="lb-name">${escapeHtml(r.img.name ?? 'Photo')}</div>
-          <div class="lb-dist">${formatDistance(r.distKm)} away</div>
-        </div>
-        <div class="lb-score">
-          <div class="lb-score-num">${r.score.toLocaleString()}</div>
-          <div class="lb-score-pts">pts</div>
-        </div>
-      </div>
-    `;
-  }).join('');
+  const leaderboard = document.getElementById('leaderboard');
+  leaderboard.innerHTML = '';
+  sorted.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'lb-row';
+
+    const rank = document.createElement('div');
+    rank.className = `rank-badge ${i < 3 ? `rank-${i + 1}` : 'rank-n'}`;
+    rank.textContent = i + 1;
+
+    const thumb = document.createElement('img');
+    thumb.className = 'lb-thumb';
+    thumb.alt = '';
+    try {
+      const parsed = new URL(r.img.url);
+      if (parsed.protocol === 'https:') thumb.src = r.img.url;
+    } catch {}
+
+    const info = document.createElement('div');
+    info.className = 'lb-info';
+    const name = document.createElement('div');
+    name.className = 'lb-name';
+    name.textContent = r.img.name ?? 'Photo';
+    const dist = document.createElement('div');
+    dist.className = 'lb-dist';
+    dist.textContent = `${formatDistance(r.distKm)} away`;
+    info.append(name, dist);
+
+    const scoreWrap = document.createElement('div');
+    scoreWrap.className = 'lb-score';
+    const scoreNum = document.createElement('div');
+    scoreNum.className = 'lb-score-num';
+    scoreNum.textContent = r.score.toLocaleString();
+    const scorePts = document.createElement('div');
+    scorePts.className = 'lb-score-pts';
+    scorePts.textContent = 'pts';
+    scoreWrap.append(scoreNum, scorePts);
+
+    row.append(rank, thumb, info, scoreWrap);
+    leaderboard.appendChild(row);
+  });
 
   showScreen('final');
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

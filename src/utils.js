@@ -24,6 +24,10 @@ export function showScreen(id) {
     sessionStorage.removeItem('activeScreen');
     sessionStorage.removeItem('gameSnapshot');
   }
+  // Push a history entry so the browser back button has something to pop
+  if (history.state?.screen !== id) {
+    history.pushState({ screen: id }, '', location.pathname);
+  }
 }
 
 // ── Toast ──────────────────────────────────────────────────────────────────

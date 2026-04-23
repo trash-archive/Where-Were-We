@@ -301,7 +301,10 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
 }
 .play-hero-sub { font-size: 14px; color: var(--gray-400); }
 .play-hero-actions {
-  display: flex; gap: 12px; flex-wrap: wrap; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
+}
+.play-hero-btns {
+  display: flex; gap: 12px; flex-wrap: wrap;
 }
 .btn-play-solo {
   background: var(--white); color: var(--gray-900);
@@ -321,6 +324,51 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
   transition: all var(--transition); white-space: nowrap;
 }
 .btn-play-multi:hover { background: rgba(255,255,255,0.2); transform: translateY(-1px); }
+
+.community-toggle-label {
+  display: inline-flex; align-items: center; gap: 10px;
+  cursor: pointer; user-select: none;
+  padding: 4px 0;
+  transition: opacity var(--transition);
+}
+.community-toggle-label:hover { opacity: 0.85; }
+.community-toggle-input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+
+/* Track */
+.community-toggle-track {
+  position: relative; width: 32px; height: 18px; flex-shrink: 0;
+  background: rgba(255,255,255,0.15); border-radius: var(--radius-full);
+  transition: background 0.2s ease;
+}
+.community-toggle-input:checked ~ .community-toggle-track {
+  background: var(--blue);
+}
+/* This selector won't work with sibling combinator across the label —
+   we handle the checked state via JS class instead */
+
+/* Thumb */
+.community-toggle-thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: rgba(255,255,255,0.5);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+/* Text */
+.community-toggle-text {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 500; color: var(--gray-400);
+  transition: color var(--transition);
+  white-space: nowrap;
+}
+
+/* Active state — toggled on via .is-on class added by JS */
+.community-toggle-label.is-on .community-toggle-track { background: var(--blue); }
+.community-toggle-label.is-on .community-toggle-thumb {
+  transform: translateX(14px);
+  background: var(--white);
+}
+.community-toggle-label.is-on .community-toggle-text { color: var(--white); }
 
 .section-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -360,7 +408,20 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
   color: var(--gray-700); transition: background var(--transition);
 }
 .photo-item-btn:hover { background: var(--white); }
-.photo-badge { position: absolute; top: 8px; right: 8px; }
+.photo-item-btn--public.active { background: var(--blue-light); color: var(--blue); }
+.photo-item-btn--public.active:hover { background: #dbeafe; }
+.photo-indicators {
+  position: absolute; top: 7px; left: 7px;
+  display: flex; gap: 4px; align-items: center;
+}
+.photo-dot {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.photo-dot--gps   { background: rgba(22,163,74,0.85); color: #fff; }
+.photo-dot--nogps { background: rgba(0,0,0,0.45); color: rgba(255,255,255,0.6); }
+.photo-dot--public { background: rgba(37,99,235,0.85); color: #fff; }
 
 /* Pagination */
 .pagination {
@@ -966,7 +1027,9 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
   .dashboard-layout { padding: 20px 16px 48px; }
   .play-hero { padding: 24px 20px; }
   .play-hero-actions { width: 100%; }
+  .play-hero-btns { width: 100%; }
   .btn-play-solo, .btn-play-multi { flex: 1; justify-content: center; }
+  .community-toggle-label { align-self: flex-start; }
   .room-layout { padding: 20px 16px; }
   .modal-box { max-width: 100%; border-radius: var(--radius-lg); }
   .toast-container { bottom: 16px; right: 16px; left: 16px; }
@@ -1034,6 +1097,10 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
 .picker-search-item:hover,
 .picker-search-item.focused { background: var(--gray-50); }
 
+.psi-type {
+  display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--gray-400); margin-bottom: 2px;
+}
 .psi-name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Map type toggle ────────────────────────────────────────────────────── */

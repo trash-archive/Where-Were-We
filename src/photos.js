@@ -108,6 +108,23 @@ export async function updatePhotoLocation(photoId, lat, lng) {
   if (error) throw error;
 }
 
+export async function togglePhotoPublic(photoId, isPublic) {
+  const { error } = await supabase
+    .from('photos').update({ is_public: isPublic }).eq('id', photoId);
+  if (error) throw error;
+}
+
+export async function getPublicPhotos(limit = 100) {
+  const { data, error } = await supabase
+    .from('photos')
+    .select('id, public_url, original_name, lat, lng, user_id')
+    .eq('is_public', true)
+    .not('lat', 'is', null)
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function getUserPhotos(userId) {
   const { data, error } = await supabase
     .from('photos').select('*').eq('user_id', userId)

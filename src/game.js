@@ -499,6 +499,15 @@ function showFinalScreen() {
 
 export function invalidateGameMap() { if (state.gameMap) state.gameMap.invalidateSize(); }
 export function panGameMap(lat, lng, zoom = 10) { if (state.gameMap) state.gameMap.setView([lat, lng], zoom, { animate: true }); }
+export function placeGamePin(lat, lng) {
+  if (!state.gameMap || state.hasGuessed) return;
+  const latlng = L.latLng(lat, lng);
+  if (state.guessMarker) state.gameMap.removeLayer(state.guessMarker);
+  state.guessMarker = L.marker(latlng, { icon: makeGuessPin('#2563eb'), zIndexOffset: 100 }).addTo(state.gameMap);
+  state.currentGuess = { lat, lng };
+  document.getElementById('submit-guess-btn').disabled = false;
+  document.getElementById('game-map-pin-hint').classList.add('hidden');
+}
 
 /**
  * Called on page reload — restores game/result/final screen from sessionStorage snapshot.

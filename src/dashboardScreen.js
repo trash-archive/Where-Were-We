@@ -5,7 +5,7 @@
 
 import { supabase } from './supabase.js';
 import { signOut, getDisplayName } from './auth.js';
-import { validateFile, uploadPhoto, getUserPhotos, deletePhoto, updatePhotoLocation } from './photos.js';
+import { validateFile, uploadPhoto, getUserPhotos, deletePhoto, updatePhotoLocation, togglePhotoPublic, getPublicPhotos } from './photos.js';
 import { createRoom, joinRoom, subscribeToRoom, startRoom, leaveRoom } from './rooms.js';
 import { openLocationPicker } from './locationPicker.js';
 import { startSoloGame as startGame, startMultiplayerGame as startMP, clearSnapshot } from './game.js';
@@ -123,6 +123,7 @@ function subscribeRoomsList() {
 
 function renderRoomsList(rooms) {
   const el = document.getElementById('dash-rooms-list');
+  el.innerHTML = '';
   if (!rooms.length) {
     el.innerHTML = `
       <div class="empty-state">
@@ -134,49 +135,65 @@ function renderRoomsList(rooms) {
       </div>`;
     return;
   }
-  el.innerHTML = rooms.map(r => {
+
+  rooms.forEach(r => {
     const isHost = r.host_id === currentUser.id;
     const alreadyIn = (r.players ?? []).some(p => p.id === currentUser.id);
     const playerCount = (r.players ?? []).length;
     const hostName = (r.players ?? []).find(p => p.id === r.host_id)?.name ?? 'Unknown';
-    const btnLabel = alreadyIn ? 'Enter' : 'Join';
-    const btnIcon = alreadyIn
+
+    // Card
+    const card = document.createElement('div');
+    card.className = 'room-card';
+
+    // Info
+    const info = document.createElement('div');
+    info.className = 'room-card-info';
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'room-name';
+    const codeSpan = document.createElement('span');
+    codeSpan.style.cssText = 'font-family:monospace;letter-spacing:0.1em;font-size:15px;font-weight:700;';
+    codeSpan.textContent = r.code;
+    nameRow.appendChild(codeSpan);
+    if (isHost) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-blue';
+      badge.style.marginLeft = '8px';
+      badge.textContent = 'Your room';
+      nameRow.appendChild(badge);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'room-meta';
+
+    const hostSpan = document.createElement('span');
+    hostSpan.textContent = `${hostName}'s room`;
+
+    const playersSpan = document.createElement('span');
+    playersSpan.className = 'room-players';
+    playersSpan.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>`;
+    playersSpan.appendChild(document.createTextNode(` ${playerCount}/6`));
+
+    const statusSpan = document.createElement('span');
+    statusSpan.style.cssText = 'display:flex;align-items:center;gap:5px;';
+    statusSpan.innerHTML = '<span class="room-status-dot dot-green"></span>';
+    statusSpan.appendChild(document.createTextNode('Waiting'));
+
+    meta.append(hostSpan, playersSpan, statusSpan);
+    info.append(nameRow, meta);
+
+    // Button — static SVG icons are safe; only textContent carries user data
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary btn-sm room-enter-btn';
+    btn.innerHTML = alreadyIn
       ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>`
       : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>`;
-    return `
-      <div class="room-card">
-        <div class="room-card-info">
-          <div class="room-name">
-            <span style="font-family:monospace;letter-spacing:0.1em;font-size:15px;font-weight:700;">${escapeHtml(r.code)}</span>
-            ${isHost ? '<span class="badge badge-blue" style="margin-left:8px;">Your room</span>' : ''}
-          </div>
-          <div class="room-meta">
-            <span>${escapeHtml(hostName)}'s room</span>
-            <span class="room-players">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-              ${playerCount}/6
-            </span>
-            <span style="display:flex;align-items:center;gap:5px;">
-              <span class="room-status-dot dot-green"></span>
-              Waiting
-            </span>
-          </div>
-        </div>
-        <button class="btn btn-primary btn-sm room-enter-btn" data-room-id="${r.id}" data-already-in="${alreadyIn}">
-          ${btnIcon} ${btnLabel}
-        </button>
-      </div>`;
-  }).join('');
+    btn.appendChild(document.createTextNode(alreadyIn ? ' Enter' : ' Join'));
+    btn.addEventListener('click', () => alreadyIn ? rejoinRoom(r.id) : joinRoomById(r.id));
 
-  el.querySelectorAll('.room-enter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const alreadyIn = btn.dataset.alreadyIn === 'true';
-      if (alreadyIn) {
-        rejoinRoom(btn.dataset.roomId);
-      } else {
-        joinRoomById(btn.dataset.roomId);
-      }
-    });
+    card.append(info, btn);
+    el.appendChild(card);
   });
 }
 
@@ -252,16 +269,19 @@ function renderPhotoGrid() {
           <button class="photo-item-btn" data-action="locate" data-id="${p.id}" title="Set location">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
           </button>
+          <button class="photo-item-btn photo-item-btn--public ${p.is_public ? 'active' : ''}" data-action="toggle-public" data-id="${p.id}" data-public="${p.is_public}" title="${p.is_public ? 'Make private' : 'Make public'}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </button>
           <button class="photo-item-btn" data-action="delete" data-id="${p.id}" data-path="${p.storage_path}" title="Delete">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
         </div>
       </div>
-      <div class="photo-badge">
+      <div class="photo-indicators">
         ${p.lat !== null
-          ? '<span class="badge badge-green"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg> GPS</span>'
-          : '<span class="badge badge-amber"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> No GPS</span>'
-        }
+          ? '<span class="photo-dot photo-dot--gps" title="Has GPS"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>'
+          : '<span class="photo-dot photo-dot--nogps" title="No GPS"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>'
+        }${p.is_public ? '<span class="photo-dot photo-dot--public" title="Public"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>' : ''}
       </div>
     </div>
   `).join('');
@@ -285,6 +305,9 @@ function renderPhotoGrid() {
 
   grid.querySelectorAll('[data-action="locate"]').forEach(btn => {
     btn.addEventListener('click', e => { e.stopPropagation(); handleLocate(btn.dataset.id); });
+  });
+  grid.querySelectorAll('[data-action="toggle-public"]').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); handleTogglePublic(btn.dataset.id, btn.dataset.public === 'true'); });
   });
   grid.querySelectorAll('[data-action="delete"]').forEach(btn => {
     btn.addEventListener('click', e => { e.stopPropagation(); handleDelete(btn.dataset.id, btn.dataset.path); });
@@ -340,6 +363,17 @@ async function handleLocate(photoId) {
   }
 }
 
+async function handleTogglePublic(photoId, currentlyPublic) {
+  const next = !currentlyPublic;
+  try {
+    await togglePhotoPublic(photoId, next);
+    toast(next ? 'Photo is now public 🌐' : 'Photo is now private', 'success');
+    await refreshPhotos();
+  } catch {
+    toast('Could not update visibility.', 'error');
+  }
+}
+
 async function handleDelete(photoId, storagePath) {
   const confirmed = await confirmDelete();
   if (!confirmed) return;
@@ -379,13 +413,24 @@ async function handleFiles(files) {
 }
 
 // ── Solo game ──────────────────────────────────────────────────────────────
-export function startSoloGame() {
+export async function startSoloGame() {
   const playable = userPhotos.filter(p => p.lat !== null);
   if (playable.length === 0) {
     toast('No photos with location data. Set locations first.', 'error');
     return;
   }
-  startGame(playable, currentUser.id);
+  let photos = [...playable];
+  if (document.getElementById('include-community-toggle')?.checked) {
+    try {
+      const community = await getPublicPhotos(100);
+      const myIds = new Set(playable.map(p => p.id));
+      const others = community.filter(p => !myIds.has(p.id));
+      photos = [...photos, ...others];
+    } catch {
+      toast('Could not load community photos.', 'error');
+    }
+  }
+  startGame(photos, currentUser.id);
 }
 
 // ── Multiplayer ────────────────────────────────────────────────────────────
@@ -397,9 +442,15 @@ async function handleCreateRoom() {
   }
   showLoading(true);
   try {
-    const room = await createRoom(currentUser.id, getDisplayName(currentUser), {
-      photoIds: playable.map(p => p.id),
-    });
+    let photoIds = playable.map(p => p.id);
+    if (document.getElementById('include-community-toggle')?.checked) {
+      try {
+        const community = await getPublicPhotos(100);
+        const myIdSet = new Set(photoIds);
+        community.filter(p => !myIdSet.has(p.id)).forEach(p => photoIds.push(p.id));
+      } catch {}
+    }
+    const room = await createRoom(currentUser.id, getDisplayName(currentUser), { photoIds });
     currentRoom = room;
     showRoomLobby(room, true);
     subscribeRoom(room.id);
@@ -420,21 +471,6 @@ export async function joinRoomByCode(code) {
   } finally {
     showLoading(false);
   }
-}
-
-async function handleJoinRoom() {
-  const code = prompt('Enter the 6-character room code:')?.trim().toUpperCase();
-  if (!code) return;
-  showLoading(true);
-  try {
-    const room = await joinRoom(code, currentUser.id, getDisplayName(currentUser));
-    currentRoom = room;
-    showRoomLobby(room, false);
-    subscribeRoom(room.id);
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-  showLoading(false);
 }
 
 function subscribeRoom(roomId) {
@@ -573,9 +609,7 @@ function wireEvents() {
     await signOut().catch(() => {});
   });
 
-  // Auto-join from URL ?join=CODE
-  const joinCode = new URLSearchParams(location.search).get('join');
-  if (joinCode) handleJoinRoom(joinCode);
+  // Auto-join from URL ?join=CODE is handled by the join modal in main.js
 }
 
 export function showLoading(show) {

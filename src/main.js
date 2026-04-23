@@ -8,7 +8,7 @@ import { initAuth } from './authScreen.js';
 import { initDashboard } from './dashboardScreen.js';
 import { initLocationPicker } from './locationPicker.js';
 import { initDeleteModal } from './modals.js';
-import { nextRound, submitGuess, invalidateGameMap, panGameMap, clearSnapshot, quitGame, playAgain } from './game.js';
+import { nextRound, submitGuess, invalidateGameMap, panGameMap, placeGamePin, clearSnapshot, quitGame, playAgain } from './game.js';
 import { startSoloGame, joinRoomByCode } from './dashboardScreen.js';
 // ── Render all screens ────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
@@ -144,14 +144,26 @@ document.getElementById('app').innerHTML = `
         <div class="play-hero-sub" id="play-hero-sub">Upload photos with GPS and start playing</div>
       </div>
       <div class="play-hero-actions">
-        <button class="btn-play-solo" id="dash-play-btn" disabled>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Play Solo
-        </button>
-        <button class="btn-play-multi" id="dash-room-btn">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          Multiplayer
-        </button>
+        <div class="play-hero-btns">
+          <button class="btn-play-solo" id="dash-play-btn" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Play Solo
+          </button>
+          <button class="btn-play-multi" id="dash-room-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Multiplayer
+          </button>
+        </div>
+        <label class="community-toggle-label" for="include-community-toggle">
+          <input type="checkbox" id="include-community-toggle" class="community-toggle-input">
+          <span class="community-toggle-track">
+            <span class="community-toggle-thumb"></span>
+          </span>
+          <span class="community-toggle-text">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            Include community photos
+          </span>
+        </label>
       </div>
     </div>
 
@@ -496,30 +508,97 @@ document.getElementById('game-map-toggle').addEventListener('click', openMapDraw
 document.getElementById('game-map-close').addEventListener('click', closeMapDrawer);
 document.getElementById('game-map-backdrop').addEventListener('click', closeMapDrawer);
 
-// ── In-map search (Nominatim) ─────────────────────────────────────────────
+// ── In-map search (with dropdown, mirrors locationPicker) ────────────────
 let searchTimer = null;
+let gameSearchFocusedIndex = -1;
 const gameSearchInput = document.getElementById('game-map-search');
+
 gameSearchInput.addEventListener('input', () => {
   clearTimeout(searchTimer);
   const q = gameSearchInput.value.trim();
-  if (q.length < 3) return;
-  searchTimer = setTimeout(() => searchAndPan(q), 600);
+  if (!q) { clearGameSearchDropdown(); return; }
+  searchTimer = setTimeout(() => gameGeocode(q), 400);
 });
 gameSearchInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { clearTimeout(searchTimer); searchAndPan(gameSearchInput.value.trim()); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); moveGameSearchFocus(1); return; }
+  if (e.key === 'ArrowUp')   { e.preventDefault(); moveGameSearchFocus(-1); return; }
+  if (e.key === 'Escape')    { clearGameSearchDropdown(); return; }
+  if (e.key === 'Enter')     { clearTimeout(searchTimer); gameGeocode(gameSearchInput.value.trim()); }
 });
-async function searchAndPan(query) {
-  if (!query) return;
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.game-map-search-wrap')) clearGameSearchDropdown();
+});
+
+const GEOCODE_HOST = 'photon.komoot.io';
+
+async function gameGeocode(query) {
+  if (!query || query.length < 3) return;
   try {
-    const res = await fetch(
-      `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1&lang=en`
-    );
+    const url = new URL('https://photon.komoot.io/api/');
+    if (url.hostname !== GEOCODE_HOST) return;
+    url.searchParams.set('q', query);
+    url.searchParams.set('limit', '5');
+    url.searchParams.set('lang', 'en');
+    const res = await fetch(url.toString());
     const { features } = await res.json();
-    if (features.length > 0) {
-      const [lon, lat] = features[0].geometry.coordinates;
-      panGameMap(lat, lon, 10);
+    showGameSearchDropdown(features);
+  } catch {}
+}
+
+function showGameSearchDropdown(features) {
+  clearGameSearchDropdown();
+  if (!features.length) return;
+  const wrap = document.querySelector('.game-map-search-wrap');
+  const ul = document.createElement('ul');
+  ul.className = 'picker-search-dropdown';
+  features.forEach((f) => {
+    const li = document.createElement('li');
+    li.className = 'picker-search-item';
+    const p = f.properties;
+    if (p.osm_value) {
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'psi-type';
+      typeSpan.textContent = p.osm_value.replace(/_/g, ' ');
+      li.appendChild(typeSpan);
     }
-  } catch { /* silently ignore */ }
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'psi-name';
+    nameSpan.textContent = formatPhotonLabel(p);
+    li.appendChild(nameSpan);
+    li.addEventListener('mousedown', (e) => { e.preventDefault(); selectGameSearchResult(f); });
+    ul.appendChild(li);
+  });
+  wrap.appendChild(ul);
+  gameSearchFocusedIndex = -1;
+}
+
+function formatPhotonLabel(p) {
+  const primary = [p.name, p.street && p.housenumber ? `${p.street} ${p.housenumber}` : p.street].filter(Boolean).join(', ');
+  const locality = p.city || p.town || p.village || p.district || p.county || '';
+  const region = [p.state, p.country].filter(Boolean).join(', ');
+  return [primary, locality, region].filter(Boolean).join(' · ');
+}
+
+function moveGameSearchFocus(dir) {
+  const items = document.querySelectorAll('.game-map-search-wrap .picker-search-item');
+  if (!items.length) return;
+  items[gameSearchFocusedIndex]?.classList.remove('focused');
+  gameSearchFocusedIndex = Math.max(0, Math.min(items.length - 1, gameSearchFocusedIndex + dir));
+  items[gameSearchFocusedIndex].classList.add('focused');
+  items[gameSearchFocusedIndex].scrollIntoView({ block: 'nearest' });
+}
+
+function selectGameSearchResult(f) {
+  const [lon, lat] = f.geometry.coordinates;
+  panGameMap(lat, lon, 10);
+  placeGamePin(lat, lon);
+  gameSearchInput.value = formatPhotonLabel(f.properties);
+  clearGameSearchDropdown();
+}
+
+function clearGameSearchDropdown() {
+  document.querySelector('.game-map-search-wrap .picker-search-dropdown')?.remove();
+  gameSearchFocusedIndex = -1;
 }
 
 // ── Join room modal ───────────────────────────────────────────────────────
@@ -594,3 +673,73 @@ joinSubmit.addEventListener('click', async () => {
 
 // Override the dashboard join button to open modal instead of prompt
 document.getElementById('dash-join-btn').addEventListener('click', openJoinModal);
+
+// ── Community toggle — restore + persist ─────────────────────────────────
+const communityCheckbox = document.getElementById('include-community-toggle');
+const communityLabel = communityCheckbox.closest('.community-toggle-label');
+const _communityOn = localStorage.getItem('community-photos') === 'true';
+communityCheckbox.checked = _communityOn;
+communityLabel.classList.toggle('is-on', _communityOn);
+communityCheckbox.addEventListener('change', () => {
+  communityLabel.classList.toggle('is-on', communityCheckbox.checked);
+  localStorage.setItem('community-photos', communityCheckbox.checked);
+});
+
+// ── System / browser back button ──────────────────────────────────────────
+window.addEventListener('popstate', (e) => {
+  const screen = e.state?.screen;
+
+  // 1. If any modal is open, close it and re-push so back doesn't leave the screen
+  const openModal = document.querySelector(
+    '.modal-overlay.open, .map-picker-modal.open'
+  );
+  if (openModal) {
+    openModal.classList.remove('open');
+    history.pushState({ screen }, '', location.pathname);
+    return;
+  }
+
+  // 2. If the mobile map drawer is open, close it instead
+  if (document.getElementById('game-map-panel').classList.contains('open')) {
+    closeMapDrawer();
+    history.pushState({ screen }, '', location.pathname);
+    return;
+  }
+
+  // 3. Per-screen back behaviour
+  switch (screen) {
+    case 'auth':
+    case 'dashboard':
+      // Already at root — re-push to prevent leaving the app
+      history.pushState({ screen }, '', location.pathname);
+      break;
+
+    case 'room':
+      // Back from room lobby → dashboard (same as clicking the Back button)
+      document.getElementById('room-leave-btn').click();
+      break;
+
+    case 'game':
+      // Back during gameplay → trigger the quit flow (shows confirm modal for MP)
+      quitGame('confirm');
+      // Re-push so if they cancel the modal the history entry is still there
+      history.pushState({ screen: 'game' }, '', location.pathname);
+      break;
+
+    case 'round-result':
+      // Can't go back mid-round — re-push to block
+      history.pushState({ screen: 'round-result' }, '', location.pathname);
+      break;
+
+    case 'final':
+      // Back from final → dashboard
+      clearSnapshot();
+      showScreen('dashboard');
+      break;
+
+    default:
+      // Unknown state (e.g. first load with no state) — go to whatever is active
+      history.pushState({ screen: sessionStorage.getItem('activeScreen') ?? 'auth' }, '', location.pathname);
+      break;
+  }
+});

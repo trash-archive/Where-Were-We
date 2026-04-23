@@ -72,7 +72,7 @@ function placeMarker(latlng) {
 function updateCoordsDisplay() {
   const el = document.getElementById('picker-coords');
   if (el && currentLat !== null) {
-    el.innerHTML = `<strong>${currentLat.toFixed(5)}</strong>, <strong>${currentLng.toFixed(5)}</strong>`;
+    el.textContent = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
   }
 }
 
@@ -105,16 +105,30 @@ export function initLocationPicker() {
   });
 }
 
+const GEOCODE_HOST = 'photon.komoot.io';
+
 async function geocodeSearch(query) {
   if (!query || query.length < 3) return;
   try {
-    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=en`);
+    const url = new URL('https://photon.komoot.io/api/');
+    if (url.hostname !== GEOCODE_HOST) return;
+    url.searchParams.set('q', query);
+    url.searchParams.set('limit', '5');
+    url.searchParams.set('lang', 'en');
+    const res = await fetch(url.toString());
     const { features } = await res.json();
     showDropdown(features);
   } catch {}
 }
 
 let focusedIndex = -1;
+
+function formatPhotonLabel(p) {
+  const primary = [p.name, p.street && p.housenumber ? `${p.street} ${p.housenumber}` : p.street].filter(Boolean).join(', ');
+  const locality = p.city || p.town || p.village || p.district || p.county || '';
+  const region = [p.state, p.country].filter(Boolean).join(', ');
+  return [primary, locality, region].filter(Boolean).join(' · ');
+}
 
 function showDropdown(features) {
   clearDropdown();
@@ -126,8 +140,16 @@ function showDropdown(features) {
     const li = document.createElement('li');
     li.className = 'picker-search-item';
     const p = f.properties;
-    const parts = [p.name, p.city || p.town || p.village, p.country].filter(Boolean);
-    li.innerHTML = `<span class="psi-name">${parts.join(', ')}</span>`;
+    if (p.osm_value) {
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'psi-type';
+      typeSpan.textContent = p.osm_value.replace(/_/g, ' ');
+      li.appendChild(typeSpan);
+    }
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'psi-name';
+    nameSpan.textContent = formatPhotonLabel(p);
+    li.appendChild(nameSpan);
     li.addEventListener('mousedown', (e) => { e.preventDefault(); selectResult(f); });
     ul.appendChild(li);
   });
@@ -142,13 +164,6 @@ function moveFocus(dir) {
   focusedIndex = Math.max(0, Math.min(items.length - 1, focusedIndex + dir));
   items[focusedIndex].classList.add('focused');
   items[focusedIndex].scrollIntoView({ block: 'nearest' });
-  // pressing Enter on a focused item
-  document.getElementById('picker-search').onkeydown = (e) => {
-    if (e.key === 'Enter' && focusedIndex >= 0) { e.preventDefault(); items[focusedIndex].dispatchEvent(new MouseEvent('mousedown')); }
-    if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); moveFocus(-1); }
-    if (e.key === 'Escape')    { clearDropdown(); }
-  };
 }
 
 function selectResult(f) {
@@ -162,8 +177,7 @@ function selectResult(f) {
   document.getElementById('picker-confirm-btn').disabled = false;
   document.getElementById('picker-hint').classList.add('hidden');
   const p = f.properties;
-  const parts = [p.name, p.city || p.town || p.village, p.country].filter(Boolean);
-  document.getElementById('picker-search').value = parts.join(', ');
+  document.getElementById('picker-search').value = formatPhotonLabel(p);
   clearDropdown();
 }
 
@@ -180,7 +194,7 @@ function closePicker(result) {
   document.getElementById('map-picker-modal').classList.remove('open');
   document.getElementById('picker-confirm-btn').disabled = true;
   document.getElementById('picker-hint').classList.remove('hidden');
-  document.getElementById('picker-coords').innerHTML = 'Click the map to pick a location';
+  document.getElementById('picker-coords').textContent = 'Click the map to pick a location';
   document.getElementById('picker-search').value = '';
   clearDropdown();
   if (pickerResolve) { pickerResolve(result); pickerResolve = null; }
