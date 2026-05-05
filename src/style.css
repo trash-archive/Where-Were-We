@@ -591,6 +591,60 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
 }
 .game-photo-panel img { max-width: 100%; max-height: calc(100vh - 104px); max-height: calc(100dvh - 104px); object-fit: contain; border-radius: var(--radius-md); display: block; }
 
+/* ── Photo zoom ───────────────────────────────────── */
+.game-photo-zoom-wrap {
+  position: relative;
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  cursor: grab;
+  border-radius: var(--radius-md);
+}
+.game-photo-zoom-wrap.dragging { cursor: grabbing; }
+.game-photo-zoom-wrap.zoomed { cursor: grab; }
+.game-photo-zoom-wrap img {
+  transform-origin: center center;
+  transition: transform 0.15s ease;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none; /* let the wrapper handle all events */
+  max-width: 100%; max-height: calc(100vh - 104px); max-height: calc(100dvh - 104px);
+  object-fit: contain; border-radius: var(--radius-md); display: block;
+}
+.game-photo-zoom-wrap.dragging img { transition: none; }
+
+/* Zoom control buttons */
+.game-photo-zoom-controls {
+  position: absolute;
+  top: 12px; right: 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  z-index: 10;
+}
+.game-photo-zoom-btn {
+  width: 34px; height: 34px;
+  background: rgba(255,255,255,0.1);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: var(--radius-md);
+  color: rgba(255,255,255,0.9);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.game-photo-zoom-btn:hover {
+  background: rgba(255,255,255,0.2);
+  border-color: rgba(255,255,255,0.4);
+}
+.game-photo-zoom-btn:focus-visible {
+  border-color: rgba(255,255,255,0.6);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.2);
+}
+.game-photo-zoom-btn:active {
+  background: rgba(255,255,255,0.3);
+}
+
 /* Map panel */
 .game-map-panel {
   width: 380px; flex-shrink: 0; display: flex; flex-direction: column;
@@ -690,15 +744,28 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
     display: flex; position: absolute;
     bottom: 24px; left: 50%; transform: translateX(-50%);
     z-index: 100;
-    background: var(--gray-900); color: var(--white);
-    border: none; border-radius: var(--radius-full);
-    padding: 12px 24px; gap: 8px;
-    font-size: 15px; font-weight: 600; font-family: var(--font-sans);
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.9);
+    border-radius: var(--radius-full);
+    padding: 10px 22px; gap: 8px;
+    font-size: 14px; font-weight: 600; font-family: var(--font-sans);
     cursor: pointer; box-shadow: var(--shadow-lg); align-items: center;
     touch-action: manipulation;
     white-space: nowrap;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
   }
-  .game-map-toggle:active { opacity: 0.85; }
+  .game-map-toggle:hover {
+    background: rgba(255,255,255,0.18);
+    border-color: rgba(255,255,255,0.35);
+  }
+  .game-map-toggle:focus-visible {
+    border-color: rgba(255,255,255,0.6);
+    box-shadow: var(--shadow-lg), 0 0 0 3px rgba(255,255,255,0.25);
+  }
+  .game-map-toggle:active { background: rgba(255,255,255,0.25); opacity: 1; }
 
   .game-map-wrap { flex: 1; min-height: 0; }
   #game-leaflet-map { width: 100%; height: 100%; }

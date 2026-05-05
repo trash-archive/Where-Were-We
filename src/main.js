@@ -306,7 +306,21 @@ document.getElementById('app').innerHTML = `
   <div class="game-map-backdrop" id="game-map-backdrop"></div>
   <div class="game-body">
     <div class="game-photo-panel">
-      <img id="game-photo-img" src="" alt="Guess this location">
+      <div class="game-photo-zoom-wrap" id="game-photo-zoom-wrap">
+        <img id="game-photo-img" src="" alt="Guess this location">
+      </div>
+      <!-- Zoom controls -->
+      <div class="game-photo-zoom-controls">
+        <button class="game-photo-zoom-btn" id="zoom-in-btn" title="Zoom in" aria-label="Zoom in">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button class="game-photo-zoom-btn" id="zoom-out-btn" title="Zoom out" aria-label="Zoom out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <button class="game-photo-zoom-btn" id="zoom-reset-btn" title="Reset zoom" aria-label="Reset zoom">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+        </button>
+      </div>
       <button class="game-map-toggle" id="game-map-toggle">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>
         Map
@@ -755,3 +769,206 @@ window.addEventListener('popstate', (e) => {
       break;
   }
 });
+
+// ── Photo zoom ────────────────────────────────────────────────────────────
+(function initPhotoZoom() {
+  const wrap = document.getElementById('game-photo-zoom-wrap');
+  const img  = document.getElementById('game-photo-img');
+
+  const MIN_SCALE = 1;
+  const MAX_SCALE = 5;
+  const STEP      = 0.5;
+
+  let scale  = 1;
+  let ox = 0, oy = 0;   // current translate offset
+  let startX, startY, startOx, startOy;
+  let isDragging = false;
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  function clampOffset(s, x, y) {
+    // How far the image can travel before showing empty space
+    const maxX = Math.max(0, (wrap.clientWidth  * (s - 1)) / 2);
+    const maxY = Math.max(0, (wrap.clientHeight * (s - 1)) / 2);
+    return {
+      x: Math.min(maxX, Math.max(-maxX, x)),
+      y: Math.min(maxY, Math.max(-maxY, y)),
+    };
+  }
+
+  function applyTransform(animate = false) {
+    img.style.transition = animate ? 'transform 0.2s ease' : 'none';
+    img.style.transform  = `translate(${ox}px, ${oy}px) scale(${scale})`;
+    wrap.classList.toggle('zoomed', scale > 1);
+  }
+
+  function zoomTo(newScale, pivotX, pivotY) {
+    // pivotX/Y are relative to the wrap element
+    const rect = wrap.getBoundingClientRect();
+    const px = (pivotX ?? rect.width  / 2) - rect.width  / 2;
+    const py = (pivotY ?? rect.height / 2) - rect.height / 2;
+
+    const ratio = newScale / scale;
+    ox = px + (ox - px) * ratio;
+    oy = py + (oy - py) * ratio;
+    scale = newScale;
+
+    const clamped = clampOffset(scale, ox, oy);
+    ox = clamped.x; oy = clamped.y;
+    applyTransform(true);
+  }
+
+  function resetZoom() {
+    scale = 1; ox = 0; oy = 0;
+    applyTransform(true);
+  }
+
+  // Reset zoom whenever a new round loads (image src changes)
+  img.addEventListener('load', resetZoom);
+
+  // ── Zoom buttons ──────────────────────────────────────────────────────────
+  document.getElementById('zoom-in-btn').addEventListener('click', () => {
+    zoomTo(Math.min(MAX_SCALE, parseFloat((scale + STEP).toFixed(2))));
+  });
+  document.getElementById('zoom-out-btn').addEventListener('click', () => {
+    const next = Math.max(MIN_SCALE, parseFloat((scale - STEP).toFixed(2)));
+    if (next <= MIN_SCALE) resetZoom(); else zoomTo(next);
+  });
+  document.getElementById('zoom-reset-btn').addEventListener('click', resetZoom);
+
+  // ── Mouse wheel zoom (desktop) ────────────────────────────────────────────
+  wrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = wrap.getBoundingClientRect();
+    const pivotX = e.clientX - rect.left;
+    const pivotY = e.clientY - rect.top;
+    const delta  = e.deltaY < 0 ? STEP : -STEP;
+    const next   = Math.min(MAX_SCALE, Math.max(MIN_SCALE, parseFloat((scale + delta).toFixed(2))));
+    if (next <= MIN_SCALE) resetZoom(); else zoomTo(next, pivotX, pivotY);
+  }, { passive: false });
+
+  // ── Mouse drag (desktop) ──────────────────────────────────────────────────
+  wrap.addEventListener('mousedown', (e) => {
+    if (scale <= 1) return;
+    e.preventDefault();
+    isDragging = true;
+    startX = e.clientX; startY = e.clientY;
+    startOx = ox; startOy = oy;
+    wrap.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    const clamped = clampOffset(scale, startOx + dx, startOy + dy);
+    ox = clamped.x; oy = clamped.y;
+    applyTransform(false);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    wrap.classList.remove('dragging');
+  });
+
+  // ── Double-click to zoom in / reset (desktop) ─────────────────────────────
+  wrap.addEventListener('dblclick', (e) => {
+    const rect = wrap.getBoundingClientRect();
+    if (scale > 1) {
+      resetZoom();
+    } else {
+      zoomTo(2.5, e.clientX - rect.left, e.clientY - rect.top);
+    }
+  });
+
+  // ── Pinch-to-zoom + drag (touch) ──────────────────────────────────────────
+  let lastDist   = null;
+  let lastMidX   = null, lastMidY = null;
+  let touchStartOx, touchStartOy, touchStartX, touchStartY;
+  let isSingleDrag = false;
+
+  function getTouchDist(t) {
+    const dx = t[0].clientX - t[1].clientX;
+    const dy = t[0].clientY - t[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+  function getTouchMid(t, rect) {
+    return {
+      x: ((t[0].clientX + t[1].clientX) / 2) - rect.left,
+      y: ((t[0].clientY + t[1].clientY) / 2) - rect.top,
+    };
+  }
+
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      lastDist = getTouchDist(e.touches);
+      const rect = wrap.getBoundingClientRect();
+      const mid  = getTouchMid(e.touches, rect);
+      lastMidX = mid.x; lastMidY = mid.y;
+      isSingleDrag = false;
+    } else if (e.touches.length === 1 && scale > 1) {
+      isSingleDrag = true;
+      touchStartX  = e.touches[0].clientX;
+      touchStartY  = e.touches[0].clientY;
+      touchStartOx = ox; touchStartOy = oy;
+    }
+  }, { passive: false });
+
+  wrap.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const rect    = wrap.getBoundingClientRect();
+      const newDist = getTouchDist(e.touches);
+      const mid     = getTouchMid(e.touches, rect);
+      const ratio   = newDist / lastDist;
+      const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, parseFloat((scale * ratio).toFixed(3))));
+
+      // Pan with the midpoint movement
+      const dmx = mid.x - lastMidX;
+      const dmy = mid.y - lastMidY;
+      const pivotX = lastMidX - rect.width  / 2;
+      const pivotY = lastMidY - rect.height / 2;
+      const scaleRatio = newScale / scale;
+      ox = pivotX + (ox - pivotX) * scaleRatio + dmx;
+      oy = pivotY + (oy - pivotY) * scaleRatio + dmy;
+      scale = newScale;
+
+      const clamped = clampOffset(scale, ox, oy);
+      ox = clamped.x; oy = clamped.y;
+      applyTransform(false);
+
+      lastDist = newDist; lastMidX = mid.x; lastMidY = mid.y;
+    } else if (e.touches.length === 1 && isSingleDrag) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      const clamped = clampOffset(scale, touchStartOx + dx, touchStartOy + dy);
+      ox = clamped.x; oy = clamped.y;
+      applyTransform(false);
+    }
+  }, { passive: false });
+
+  wrap.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) { lastDist = null; }
+    if (e.touches.length === 0) { isSingleDrag = false; }
+    // Snap back to min if scale drifted below 1
+    if (scale < MIN_SCALE) resetZoom();
+  });
+
+  // ── Double-tap to zoom (touch) ────────────────────────────────────────────
+  let lastTap = 0;
+  wrap.addEventListener('touchend', (e) => {
+    if (e.touches.length !== 0) return;
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      const rect = wrap.getBoundingClientRect();
+      const t = e.changedTouches[0];
+      if (scale > 1) {
+        resetZoom();
+      } else {
+        zoomTo(2.5, t.clientX - rect.left, t.clientY - rect.top);
+      }
+      e.preventDefault();
+    }
+    lastTap = now;
+  });
+})();
