@@ -86,6 +86,13 @@ document.getElementById('app').innerHTML = `
     <div class="map-picker-search">
       <input class="input" id="picker-search" type="text" placeholder="Search for a city or place&hellip;">
     </div>
+    <div class="map-picker-gps-row">
+      <button class="btn btn-secondary btn-sm" id="picker-use-location-btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        Use my current location
+      </button>
+      <span class="map-picker-gps-hint">Useful if the photo was taken nearby</span>
+    </div>
     <div class="map-picker-map-wrap">
       <div id="location-picker-map"></div>
       <div class="map-picker-hint hidden" id="picker-hint">Click the map to drop a pin</div>
@@ -261,6 +268,14 @@ document.getElementById('app').innerHTML = `
           <button id="guidelines-info-btn" title="Community Guidelines" style="width:20px;height:20px;border-radius:50%;border:1.5px solid var(--gray-300);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:11px;font-weight:700;font-family:var(--font-sans);padding:0;transition:border-color 0.15s,color 0.15s;flex-shrink:0;">i</button>
         </div>
         <span id="dash-photo-count" class="text-small text-muted"></span>
+      </div>
+
+      <!-- GPS info banner -->
+      <div id="gps-info-banner" class="gps-info-banner hidden">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div class="gps-banner-text">
+          <span id="gps-banner-count"></span> &mdash; iPhones and most mobile browsers strip GPS from photos for privacy. Use the <strong>pin icon</strong> on each photo to set its location manually, or search for a place.
+        </div>
       </div>
       <input type="file" id="dash-file-input" multiple accept="image/*" style="display:none">
       <div id="dash-photo-grid" class="photo-grid"></div>

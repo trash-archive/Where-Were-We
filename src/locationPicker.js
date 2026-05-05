@@ -86,6 +86,35 @@ export function initLocationPicker() {
     if (e.target === document.getElementById('map-picker-modal')) closePicker(null);
   });
 
+  document.getElementById('picker-use-location-btn').addEventListener('click', () => {
+    const btn = document.getElementById('picker-use-location-btn');
+    if (!navigator.geolocation) {
+      btn.textContent = 'Not supported by browser';
+      return;
+    }
+    btn.textContent = 'Locating…';
+    btn.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+        currentLat = pos.coords.latitude;
+        currentLng = pos.coords.longitude;
+        pickerMap.setView(latlng, 13, { animate: true });
+        placeMarker(latlng);
+        updateCoordsDisplay();
+        document.getElementById('picker-confirm-btn').disabled = false;
+        document.getElementById('picker-hint').classList.add('hidden');
+        btn.textContent = 'Use my current location';
+        btn.disabled = false;
+      },
+      () => {
+        btn.textContent = 'Location denied';
+        setTimeout(() => { btn.textContent = 'Use my current location'; btn.disabled = false; }, 2500);
+      },
+      { timeout: 8000 }
+    );
+  });
+
   const searchInput = document.getElementById('picker-search');
   let searchTimer = null;
   searchInput.addEventListener('input', () => {

@@ -49,9 +49,20 @@ async function refreshPhotos() {
     currentPage = 1;
     renderPhotoGrid();
     updateStats();
+    renderGpsBanner();
   } catch (e) {
     toast('Could not load photos.', 'error');
   }
+}
+
+function renderGpsBanner() {
+  const noGpsCount = userPhotos.filter(p => p.lat === null).length;
+  const banner = document.getElementById('gps-info-banner');
+  if (!banner) return;
+  if (noGpsCount === 0) { banner.classList.add('hidden'); return; }
+  banner.classList.remove('hidden');
+  document.getElementById('gps-banner-count').textContent =
+    `${noGpsCount} photo${noGpsCount !== 1 ? 's' : ''} missing location`;
 }
 
 function updateStats() {
