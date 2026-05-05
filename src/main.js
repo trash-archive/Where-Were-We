@@ -307,7 +307,6 @@ document.getElementById('app').innerHTML = `
   <div class="game-body">
     <div class="game-photo-panel">
       <img id="game-photo-img" src="" alt="Guess this location">
-      <div class="game-photo-label">Where in the world was this taken?</div>
       <button class="game-map-toggle" id="game-map-toggle">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><path d="M9 4v13M15 7v13"/></svg>
         Map

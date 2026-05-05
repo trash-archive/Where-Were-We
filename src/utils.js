@@ -16,6 +16,13 @@ export function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById(`screen-${id}`);
   if (el) el.classList.add('active');
+
+  // Always close the mobile map drawer when navigating to the game screen
+  if (id === 'game') {
+    document.getElementById('game-map-panel')?.classList.remove('open');
+    document.getElementById('game-map-backdrop')?.classList.remove('open');
+  }
+
   // Persist so reload can restore the correct screen
   // Don't persist auth screen — unauthenticated state is handled by Supabase
   if (id !== 'auth') {
