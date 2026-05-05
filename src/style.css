@@ -258,8 +258,6 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
 .auth-card { width: 100%; max-width: 400px; padding: 40px 36px; }
 .auth-logo { text-align: center; margin-bottom: 32px; }
 .auth-logo-mark {
-  width: 48px; height: 48px; border-radius: 12px;
-  background: var(--gray-900); color: var(--white);
   display: flex; align-items: center; justify-content: center;
   margin: 0 auto 12px;
 }
@@ -273,6 +271,8 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
 .auth-divider span { font-size: 12px; color: var(--gray-400); }
 .auth-error { background: var(--red-light); border: 1px solid #fecaca; color: var(--red); border-radius: var(--radius-md); padding: 10px 14px; font-size: 13px; margin-bottom: 16px; display: none; }
 .auth-error.show { display: block; }
+.field-hint { font-size: 12px; color: var(--red); margin-top: 4px; display: none; }
+.field-hint.show { display: block; }
 
 /* ─────────────────────────────────────────────────────
    DASHBOARD SCREEN
@@ -305,24 +305,26 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
   display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
 }
 .play-hero-btns {
-  display: flex; gap: 12px; flex-wrap: wrap;
+  display: flex; gap: 12px; flex-wrap: nowrap; width: 100%;
 }
 .btn-play-solo {
   background: var(--white); color: var(--gray-900);
-  padding: 14px 28px; font-size: 15px; font-weight: 600;
+  padding: 14px 16px; font-size: 15px; font-weight: 600;
   border-radius: var(--radius-lg); border: none; cursor: pointer;
   display: inline-flex; align-items: center; gap: 9px;
   transition: all var(--transition); white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  flex: 1 1 0; min-width: 0; justify-content: center;
 }
 .btn-play-solo:hover:not(:disabled) { background: var(--gray-100); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
 .btn-play-solo:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn-play-multi {
   background: rgba(255,255,255,0.12); color: var(--white);
-  padding: 14px 28px; font-size: 15px; font-weight: 600;
+  padding: 14px 16px; font-size: 15px; font-weight: 600;
   border-radius: var(--radius-lg); border: 1px solid rgba(255,255,255,0.2);
   cursor: pointer; display: inline-flex; align-items: center; gap: 9px;
   transition: all var(--transition); white-space: nowrap;
+  flex: 1 1 0; min-width: 0; justify-content: center;
 }
 .btn-play-multi:hover { background: rgba(255,255,255,0.2); transform: translateY(-1px); }
 
@@ -656,22 +658,22 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
   /* Map drawer */
   .game-map-panel {
     position: fixed;
-    inset: 0;
-    width: 100%;
+    top: 0; right: 0; bottom: 0; left: 0;
+    width: auto;
     z-index: 200;
     transform: translateX(100%);
     transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
     box-shadow: var(--shadow-xl);
     border-left: none;
     display: flex; flex-direction: column;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
+    isolation: isolate;
   }
   .game-map-panel.open { transform: translateX(0); }
 
   /* Backdrop */
   .game-map-backdrop {
-    display: block; position: fixed; inset: 0;
+    display: block; position: fixed;
+    top: 0; right: 0; bottom: 0; left: 0;
     background: rgba(0,0,0,0.35); z-index: 199;
     opacity: 0; pointer-events: none;
     transition: opacity 0.28s ease;
@@ -1042,7 +1044,7 @@ h1, h2, h3 { color: var(--gray-900); font-weight: 600; letter-spacing: -0.02em; 
   .play-hero { padding: 24px 20px; }
   .play-hero-actions { width: 100%; }
   .play-hero-btns { width: 100%; }
-  .btn-play-solo, .btn-play-multi { flex: 1; justify-content: center; }
+  .btn-play-solo, .btn-play-multi { flex: 1 1 0; justify-content: center; }
   .community-toggle-label { align-self: flex-start; }
   .room-layout { padding: 20px 16px; }
   .modal-box { max-width: 100%; border-radius: var(--radius-lg); }

@@ -85,7 +85,7 @@ document.getElementById('app').innerHTML = `
   <div class="auth-card card" style="margin:auto;">
     <div class="auth-logo">
       <div class="auth-logo-mark">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        <img src="/logo-black.png" alt="Where Were We" style="height:70px;width:auto;">
       </div>
       <div class="auth-title" id="auth-title">Sign in</div>
       <div class="auth-sub" id="auth-sub">Welcome back to Where Were We</div>
@@ -94,14 +94,22 @@ document.getElementById('app').innerHTML = `
     <div id="auth-username-field" class="auth-field hidden">
       <label class="label">Username</label>
       <input class="input" id="auth-username" type="text" placeholder="Your display name" autocomplete="username">
+      <div class="field-hint" id="auth-username-hint"></div>
     </div>
     <div class="auth-field">
       <label class="label">Email</label>
       <input class="input" id="auth-email" type="email" placeholder="you@example.com" autocomplete="email">
+      <div class="field-hint" id="auth-email-hint"></div>
     </div>
     <div class="auth-field">
       <label class="label">Password</label>
       <input class="input" id="auth-password" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
+      <div class="field-hint" id="auth-password-hint"></div>
+    </div>
+    <div id="auth-confirm-field" class="auth-field hidden">
+      <label class="label">Confirm Password</label>
+      <input class="input" id="auth-confirm" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="new-password">
+      <div class="field-hint" id="auth-confirm-hint"></div>
     </div>
     <button class="btn btn-primary w-full" id="auth-submit-btn" style="margin-top:4px;">Sign in</button>
     <div class="auth-footer">
@@ -115,7 +123,7 @@ document.getElementById('app').innerHTML = `
 <div id="screen-dashboard" class="screen">
   <nav class="navbar">
     <div class="navbar-brand">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+      <img src="/logo-black.png" alt="Where Were We" style="height:40px;width:auto;">
       Where Were We
     </div>
     <div class="navbar-right">

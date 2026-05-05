@@ -68,6 +68,15 @@ export function initAuth() {
   document.getElementById('auth-password').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleSubmit();
   });
+  document.getElementById('auth-confirm').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleSubmit();
+  });
+
+  // Live validation
+  document.getElementById('auth-email').addEventListener('blur', () => validateEmail(true));
+  document.getElementById('auth-password').addEventListener('blur', () => validatePassword(true));
+  document.getElementById('auth-confirm').addEventListener('blur', () => validateConfirm(true));
+  document.getElementById('auth-username').addEventListener('blur', () => validateUsername(true));
 }
 
 function toggleMode() {
@@ -80,7 +89,66 @@ function toggleMode() {
   document.getElementById('auth-toggle-text').textContent = isSignUp ? 'Already have an account?' : 'Don\'t have an account?';
   document.getElementById('auth-toggle-link').textContent = isSignUp ? ' Sign in' : ' Sign up';
   document.getElementById('auth-username-field').classList.toggle('hidden', !isSignUp);
+  document.getElementById('auth-confirm-field').classList.toggle('hidden', !isSignUp);
+  clearFieldErrors();
   hideError();
+}
+
+// ── Validation helpers ────────────────────────────────────────────────────
+function setFieldError(inputId, hintId, msg) {
+  const input = document.getElementById(inputId);
+  const hint = document.getElementById(hintId);
+  if (msg) {
+    input.classList.add('error');
+    hint.textContent = msg;
+    hint.classList.add('show');
+  } else {
+    input.classList.remove('error');
+    hint.textContent = '';
+    hint.classList.remove('show');
+  }
+  return !msg;
+}
+
+function validateEmail(blur = false) {
+  const val = document.getElementById('auth-email').value.trim();
+  if (!val) return setFieldError('auth-email', 'auth-email-hint', blur ? 'Email is required.' : null);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) return setFieldError('auth-email', 'auth-email-hint', 'Enter a valid email address.');
+  return setFieldError('auth-email', 'auth-email-hint', null);
+}
+
+function validatePassword(blur = false) {
+  const val = document.getElementById('auth-password').value;
+  if (!val) return setFieldError('auth-password', 'auth-password-hint', blur ? 'Password is required.' : null);
+  if (isSignUp && val.length < 8) return setFieldError('auth-password', 'auth-password-hint', 'Password must be at least 8 characters.');
+  return setFieldError('auth-password', 'auth-password-hint', null);
+}
+
+function validateConfirm(blur = false) {
+  if (!isSignUp) return true;
+  const pass = document.getElementById('auth-password').value;
+  const confirm = document.getElementById('auth-confirm').value;
+  if (!confirm) return setFieldError('auth-confirm', 'auth-confirm-hint', blur ? 'Please confirm your password.' : null);
+  if (confirm !== pass) return setFieldError('auth-confirm', 'auth-confirm-hint', 'Passwords do not match.');
+  return setFieldError('auth-confirm', 'auth-confirm-hint', null);
+}
+
+function validateUsername(blur = false) {
+  if (!isSignUp) return true;
+  const val = document.getElementById('auth-username').value.trim();
+  if (!val) return setFieldError('auth-username', 'auth-username-hint', blur ? 'Username is required.' : null);
+  if (val.length < 2) return setFieldError('auth-username', 'auth-username-hint', 'Username must be at least 2 characters.');
+  return setFieldError('auth-username', 'auth-username-hint', null);
+}
+
+function clearFieldErrors() {
+  ['auth-email', 'auth-password', 'auth-confirm', 'auth-username'].forEach(id => {
+    document.getElementById(id)?.classList.remove('error');
+  });
+  ['auth-email-hint', 'auth-password-hint', 'auth-confirm-hint', 'auth-username-hint'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.classList.remove('show'); }
+  });
 }
 
 async function handleSubmit() {
@@ -90,8 +158,12 @@ async function handleSubmit() {
   const btn = document.getElementById('auth-submit-btn');
 
   hideError();
-  if (!email || !password) { showError('Please fill in all fields.'); return; }
-  if (isSignUp && !username) { showError('Please enter a username.'); return; }
+
+  const emailOk = validateEmail(true);
+  const passOk = validatePassword(true);
+  const confirmOk = validateConfirm(true);
+  const usernameOk = validateUsername(true);
+  if (!emailOk || !passOk || !confirmOk || !usernameOk) return;
 
   btn.disabled = true;
   btn.textContent = isSignUp ? 'Creating account…' : 'Signing in…';
@@ -102,7 +174,6 @@ async function handleSubmit() {
     } else {
       await signIn(email, password);
     }
-    // onAuthChange will fire and route to dashboard
   } catch (err) {
     showError(err.message ?? 'Something went wrong. Please try again.');
     btn.disabled = false;
