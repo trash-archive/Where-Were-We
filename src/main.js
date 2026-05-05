@@ -7,11 +7,59 @@ import { showScreen } from './utils.js';
 import { initAuth } from './authScreen.js';
 import { initDashboard } from './dashboardScreen.js';
 import { initLocationPicker } from './locationPicker.js';
-import { initDeleteModal } from './modals.js';
+import { initDeleteModal, initGuidelinesModal, showGuidelinesModal } from './modals.js';
 import { nextRound, submitGuess, invalidateGameMap, panGameMap, placeGamePin, clearSnapshot, quitGame, playAgain } from './game.js';
 import { startSoloGame, joinRoomByCode } from './dashboardScreen.js';
+import { isAdmin, loadAdminPanel, ADMIN_EMAIL } from './adminScreen.js';
 // ── Render all screens ────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
+
+<!-- GUIDELINES MODAL -->
+<div id="guidelines-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Community Guidelines</div>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--gray-500);line-height:1.7;margin-bottom:12px;">To keep Where Were We safe and enjoyable for everyone, all uploaded photos must follow these rules:</p>
+      <ul class="guidelines-list">
+        <li>No explicit, sexual, or adult content</li>
+        <li>No graphic violence or disturbing imagery</li>
+        <li>No hate symbols, harassment, or discriminatory content</li>
+        <li>Only upload photos you own or have rights to share</li>
+        <li>No personal or private information visible in photos</li>
+      </ul>
+      <p style="font-size:12px;color:var(--gray-400);margin-top:12px;line-height:1.6;">Uploads are automatically scanned. Violations may result in removal and account suspension.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="guidelines-decline-btn">Cancel</button>
+      <button class="btn btn-primary" id="guidelines-accept-btn">I Agree &amp; Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- REPORT MODAL -->
+<div id="report-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">Report Photo</div>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--gray-500);line-height:1.6;margin-bottom:14px;">Why are you reporting this photo?</p>
+      <div class="report-options">
+        <label class="report-option"><input type="radio" name="report-reason" value="explicit"> Explicit or adult content</label>
+        <label class="report-option"><input type="radio" name="report-reason" value="violence"> Violence or disturbing content</label>
+        <label class="report-option"><input type="radio" name="report-reason" value="hate"> Hate speech or harassment</label>
+        <label class="report-option"><input type="radio" name="report-reason" value="spam"> Spam or misleading</label>
+        <label class="report-option"><input type="radio" name="report-reason" value="other"> Other</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="report-cancel-btn">Cancel</button>
+      <button class="btn btn-danger" id="report-submit-btn" disabled>Submit Report</button>
+    </div>
+  </div>
+</div>
 
 <!-- LOADING OVERLAY -->
 <div id="loading-overlay" class="loading-overlay">
@@ -142,6 +190,10 @@ document.getElementById('app').innerHTML = `
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Sign out
           </button>
+          <button class="nav-dropdown-item hidden" id="nav-admin-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            Reported Photos
+          </button>
         </div>
       </div>
     </div>
@@ -204,18 +256,14 @@ document.getElementById('app').innerHTML = `
     <!-- Photos -->
     <div class="section">
       <div class="section-header">
-        <div class="section-title">Your Photos</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="section-title">Your Photos</div>
+          <button id="guidelines-info-btn" title="Community Guidelines" style="width:20px;height:20px;border-radius:50%;border:1.5px solid var(--gray-300);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:11px;font-weight:700;font-family:var(--font-sans);padding:0;transition:border-color 0.15s,color 0.15s;flex-shrink:0;">i</button>
+        </div>
         <span id="dash-photo-count" class="text-small text-muted"></span>
       </div>
-      <div class="upload-zone" id="dash-drop-zone">
-        <div class="upload-zone-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-        </div>
-        <div class="upload-zone-title">Drop photos here or click to browse</div>
-        <div class="upload-zone-sub">JPEG, PNG, WebP, HEIC &mdash; max 20 MB &middot; GPS auto-detected</div>
-      </div>
       <input type="file" id="dash-file-input" multiple accept="image/*" style="display:none">
-      <div id="dash-photo-grid" class="photo-grid" style="margin-top:14px;"></div>
+      <div id="dash-photo-grid" class="photo-grid"></div>
       <div id="dash-pagination" class="pagination" style="display:none;"></div>
     </div>
 
@@ -267,6 +315,18 @@ document.getElementById('app').innerHTML = `
           <option value="10">10</option>
         </select>
       </div>
+      <div class="room-setting-row">
+        <div>
+          <div class="room-setting-label">Community Photos</div>
+          <div class="room-setting-sub" id="room-community-sub">Off — only players' photos</div>
+        </div>
+        <label class="community-toggle-label" id="room-community-label" for="room-community-toggle">
+          <input type="checkbox" id="room-community-toggle" class="community-toggle-input">
+          <span class="community-toggle-track">
+            <span class="community-toggle-thumb"></span>
+          </span>
+        </label>
+      </div>
     </div>
 
     <!-- Actions -->
@@ -309,6 +369,11 @@ document.getElementById('app').innerHTML = `
       <div class="game-photo-zoom-wrap" id="game-photo-zoom-wrap">
         <img id="game-photo-img" src="" alt="Guess this location">
       </div>
+      <!-- Report button (community photos only) -->
+      <button class="game-report-btn hidden" id="game-report-btn" title="Report this photo">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+        Report
+      </button>
       <!-- Zoom controls -->
       <div class="game-photo-zoom-controls">
         <button class="game-photo-zoom-btn" id="zoom-in-btn" title="Zoom in" aria-label="Zoom in">
@@ -356,27 +421,28 @@ document.getElementById('app').innerHTML = `
       <div class="result-title">Round Result</div>
       <div class="badge badge-gray" id="rr-round-label">Round 1 of 5</div>
     </div>
-    <div class="result-main card">
-      <div class="result-top-row">
-        <img class="result-photo" id="rr-photo" src="" alt="">
-        <div class="result-score-wrap">
-          <div class="result-score-ring-container">
-            <svg class="score-ring-svg" viewBox="0 0 80 80">
-              <circle cx="40" cy="40" r="34" fill="none" stroke="#e8e7e5" stroke-width="7"/>
-              <circle id="rr-ring-fill" cx="40" cy="40" r="34" fill="none"
-                stroke="#191816" stroke-width="7" stroke-linecap="round"
-                stroke-dasharray="0 213.6" style="transition:stroke-dasharray 0.7s ease;"/>
-            </svg>
-            <span class="score-ring-num" id="rr-score-num">0</span>
-          </div>
-          <div class="score-ring-label">points</div>
+
+    <!-- Hero: photo + score overlay -->
+    <div class="result-hero">
+      <div class="result-photo-wrap">
+        <img id="rr-photo" src="" alt="">
+        <div class="result-score-overlay">
+          <div class="result-score-big" id="rr-score-num">0</div>
+          <div class="result-score-label">points</div>
         </div>
       </div>
-      <div class="result-dist-num" id="rr-distance">&mdash;</div>
-      <div class="result-dist-label">from the actual location</div>
-      <div class="result-locs">
-        <div class="result-loc"><span>Your guess</span><span id="rr-guess-coords">&mdash;</span></div>
-        <div class="result-loc"><span>Actual</span><span id="rr-actual-coords">&mdash;</span></div>
+      <!-- Stats grid -->
+      <div class="result-stats">
+        <div class="result-stat">
+          <div class="result-stat-label">Distance</div>
+          <div class="result-stat-value" id="rr-distance">&mdash;</div>
+          <div class="result-stat-sub">from actual location</div>
+        </div>
+        <div class="result-stat">
+          <div class="result-stat-label">Your Guess</div>
+          <div class="result-stat-value" style="font-size:14px;padding-top:3px;" id="rr-guess-coords">&mdash;</div>
+          <div class="result-stat-sub" id="rr-actual-coords">&mdash;</div>
+        </div>
       </div>
     </div>
 
@@ -395,9 +461,11 @@ document.getElementById('app').innerHTML = `
       </div>
     </div>
 
+    <!-- Map -->
     <div class="result-mini-map">
       <div id="mini-result-map" style="width:100%;height:100%;"></div>
     </div>
+
     <div class="result-actions">
       <button class="btn btn-primary btn-lg" id="rr-next-btn">Next Round</button>
     </div>
@@ -407,6 +475,8 @@ document.getElementById('app').innerHTML = `
 <!-- FINAL -->
 <div id="screen-final" class="screen">
   <div class="final-layout">
+
+    <!-- Hero banner -->
     <div class="final-hero">
       <div class="final-medal medal-default" id="final-medal">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
@@ -414,32 +484,38 @@ document.getElementById('app').innerHTML = `
       <div class="final-grade" id="final-grade">Game Over</div>
       <div class="final-sub" id="final-sub">Well played!</div>
     </div>
+
+    <!-- Stats -->
     <div class="final-stats">
-      <div class="final-stat card-flat">
+      <div class="final-stat">
         <div class="final-stat-num" id="final-total">0</div>
         <div class="final-stat-label">Total Score</div>
       </div>
-      <div class="final-stat card-flat">
+      <div class="final-stat">
         <div class="final-stat-num" id="final-avg-dist">&mdash;</div>
         <div class="final-stat-label">Avg Distance</div>
       </div>
-      <div class="final-stat card-flat">
+      <div class="final-stat">
         <div class="final-stat-num" id="final-best">0</div>
         <div class="final-stat-label">Best Round</div>
       </div>
     </div>
-    <div class="breakdown-title">Round Breakdown</div>
-    <div class="breakdown-list" id="final-breakdown"></div>
+
+    <!-- Solo breakdown -->
+    <div id="final-solo-section">
+      <div class="final-section-title">Round Breakdown</div>
+      <div class="final-breakdown" id="final-breakdown"></div>
+    </div>
 
     <!-- Multiplayer leaderboard (hidden in solo) -->
     <div class="final-mp-wrap hidden">
-      <div class="breakdown-title">Final Leaderboard</div>
-      <div class="breakdown-list" id="final-mp-leaderboard"></div>
+      <div class="final-section-title">Final Leaderboard</div>
+      <div class="final-breakdown" id="final-mp-leaderboard"></div>
     </div>
 
     <div class="final-actions">
-      <button class="btn btn-secondary" id="final-play-again-btn">Play Again</button>
-      <button class="btn btn-primary" id="final-dashboard-btn">Back to Dashboard</button>
+      <button class="btn btn-secondary btn-lg" id="final-play-again-btn">Play Again</button>
+      <button class="btn btn-primary btn-lg" id="final-dashboard-btn">Back to Dashboard</button>
     </div>
   </div>
 </div>
@@ -459,6 +535,23 @@ document.getElementById('app').innerHTML = `
   </div>
 </div>
 
+<!-- ADMIN SCREEN -->
+<div id="screen-admin" class="screen">
+  <nav class="navbar">
+    <button class="btn btn-ghost btn-sm" id="admin-back-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+      Back
+    </button>
+    <div class="navbar-brand" style="margin-left:8px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+      Reported Photos
+    </div>
+  </nav>
+  <div class="admin-layout">
+    <div id="admin-reports-list"></div>
+  </div>
+</div>
+
 <!-- DELETE CONFIRM MODAL -->
 <div id="delete-confirm-modal" class="modal-overlay">
   <div class="modal-box">
@@ -472,6 +565,17 @@ document.getElementById('app').innerHTML = `
       <button class="btn btn-secondary" id="delete-modal-cancel">Cancel</button>
       <button class="btn btn-danger" id="delete-modal-confirm">Delete</button>
     </div>
+  </div>
+</div>
+
+<!-- FULL-PAGE DRAG OVERLAY -->
+<div id="drag-overlay" class="drag-overlay">
+  <div class="drag-overlay-inner">
+    <div class="drag-overlay-icon">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </div>
+    <div class="drag-overlay-title">Drop photos here</div>
+    <div class="drag-overlay-sub">JPEG, PNG, WebP &middot; GPS auto-detected</div>
   </div>
 </div>
 
@@ -495,14 +599,73 @@ document.getElementById('app').innerHTML = `
 // ── Init controllers ──────────────────────────────────────────────────────
 initLocationPicker();
 initDeleteModal();
+initGuidelinesModal();
 initAuth();
 initDashboard();
+
+// ── Guidelines info button ────────────────────────────────────────────────
+document.getElementById('guidelines-info-btn').addEventListener('click', () => showGuidelinesModal());
+
+// ── Admin panel ───────────────────────────────────────────────────────────
+document.getElementById('nav-admin-btn').addEventListener('click', () => {
+  showScreen('admin');
+  loadAdminPanel();
+});
+document.getElementById('admin-back-btn').addEventListener('click', () => showScreen('dashboard'));
+
+// Expose showAdminBtn so dashboardScreen can call it after login
+export function showAdminNavBtn(user) {
+  document.getElementById('nav-admin-btn').classList.toggle('hidden', !isAdmin(user));
+}
+
+// ── Report modal ──────────────────────────────────────────────────────────
+const reportModal = document.getElementById('report-modal');
+const reportSubmit = document.getElementById('report-submit-btn');
+reportModal.querySelectorAll('input[name="report-reason"]').forEach(r => {
+  r.addEventListener('change', () => { reportSubmit.disabled = false; });
+});
+document.getElementById('report-cancel-btn').addEventListener('click', () => {
+  reportModal.classList.remove('open');
+  reportModal.querySelectorAll('input[name="report-reason"]').forEach(r => { r.checked = false; });
+  reportSubmit.disabled = true;
+});
+reportModal.addEventListener('click', e => {
+  if (e.target === reportModal) document.getElementById('report-cancel-btn').click();
+});
+reportSubmit.addEventListener('click', async () => {
+  const reason = reportModal.querySelector('input[name="report-reason"]:checked')?.value;
+  const photoId = reportModal.dataset.photoId;
+  if (!reason || !photoId) return;
+  reportSubmit.disabled = true;
+  reportSubmit.textContent = 'Submitting…';
+  try {
+    const { supabase } = await import('./supabase.js');
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('photo_reports').insert({ photo_id: photoId, reason, reporter_id: user?.id });
+    document.getElementById('report-cancel-btn').click();
+    const { toast } = await import('./utils.js');
+    toast('Report submitted. Thank you!', 'success');
+  } catch {
+    reportSubmit.disabled = false;
+    reportSubmit.textContent = 'Submit Report';
+  }
+});
 
 // ── Game buttons ──────────────────────────────────────────────────────────
 document.getElementById('submit-guess-btn').addEventListener('click', () => { closeMapDrawer(); submitGuess(); });
 document.getElementById('rr-next-btn').addEventListener('click', () => { closeMapDrawer(); nextRound(); });
 document.getElementById('final-dashboard-btn').addEventListener('click', () => { clearSnapshot(); showScreen('dashboard'); });
 document.getElementById('final-play-again-btn').addEventListener('click', playAgain);
+
+// ── Report photo during gameplay ──────────────────────────────────────────
+document.getElementById('game-report-btn').addEventListener('click', () => {
+  const btn = document.getElementById('game-report-btn');
+  const photoId = btn.dataset.photoId;
+  if (!photoId) return;
+  const modal = document.getElementById('report-modal');
+  modal.dataset.photoId = photoId;
+  modal.classList.add('open');
+});
 
 // ── Quit / host-ended modals ────────────────────────────────────────────────────
 document.getElementById('game-quit-btn').addEventListener('click', () => quitGame('confirm'));

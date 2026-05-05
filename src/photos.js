@@ -9,6 +9,71 @@ import { supabase, PHOTO_BUCKET } from './supabase.js';
 
 const MAX_SIZE_MB = 20;
 
+// ── NSFW check ─────────────────────────────────────────────────────────────
+let _nsfwModel = null;
+let _nsfwModelPromise = null;
+
+// Candidate model URLs — tried in order until one loads
+const MODEL_URLS = [
+  'https://cdn.jsdelivr.net/npm/nsfwjs@4/example/nsfw_demo/public/quant_nsfw_mobilenet/',
+  'https://nsfwjs.com/quant_nsfw_mobilenet/',
+];
+
+async function loadNsfwModel() {
+  await import('@tensorflow/tfjs');
+  const nsfwjs = await import('nsfwjs');
+  for (const url of MODEL_URLS) {
+    try {
+      const model = await nsfwjs.default.load(url, { size: 224 });
+      return model;
+    } catch { /* try next */ }
+  }
+  throw new Error('All model URLs failed');
+}
+
+// Call this early (e.g. on dashboard load) to warm up the model in the background.
+export function prewarmNsfwModel() {
+  if (_nsfwModel || _nsfwModelPromise) return;
+  _nsfwModelPromise = loadNsfwModel()
+    .then(m => { _nsfwModel = m; })
+    .catch(() => { /* fail open */ })
+    .finally(() => { _nsfwModelPromise = null; });
+}
+
+/**
+ * Returns an error string if the image is unsafe, or null if it's fine.
+ * Waits up to 25s for the model; if still not ready, fails open.
+ */
+export async function checkImageSafety(file) {
+  try {
+    if (!_nsfwModel) {
+      if (!_nsfwModelPromise) prewarmNsfwModel();
+      await Promise.race([_nsfwModelPromise, new Promise(res => setTimeout(res, 25000))]);
+    }
+    if (!_nsfwModel) return null; // timed out — fail open
+
+    const url = URL.createObjectURL(file);
+    const img = await new Promise((res, rej) => {
+      const el = new Image();
+      el.onload = () => res(el);
+      el.onerror = rej;
+      el.src = url;
+    });
+    const predictions = await _nsfwModel.classify(img);
+    URL.revokeObjectURL(url);
+
+    const unsafe = predictions.find(
+      p => ['Porn', 'Hentai'].includes(p.className) && p.probability > 0.5
+    );
+    if (unsafe) return `"${file.name}" was blocked — explicit content detected (${Math.round(unsafe.probability * 100)}% confidence).`;
+    const sexy = predictions.find(p => p.className === 'Sexy' && p.probability > 0.75);
+    if (sexy) return `"${file.name}" was blocked — content may be inappropriate.`;
+    return null;
+  } catch {
+    return null; // fail open — don't block on model errors
+  }
+}
+
 // MIME types browsers can natively render in <img> tags
 const BROWSER_RENDERABLE = new Set([
   'image/jpeg', 'image/jpg', 'image/png', 'image/webp',

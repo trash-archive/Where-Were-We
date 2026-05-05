@@ -5,12 +5,13 @@
 
 import { supabase } from './supabase.js';
 import { signOut, getDisplayName } from './auth.js';
-import { validateFile, uploadPhoto, getUserPhotos, deletePhoto, updatePhotoLocation, togglePhotoPublic, getPublicPhotos } from './photos.js';
-import { createRoom, joinRoom, subscribeToRoom, startRoom, leaveRoom } from './rooms.js';
+import { validateFile, uploadPhoto, getUserPhotos, deletePhoto, updatePhotoLocation, togglePhotoPublic, getPublicPhotos, checkImageSafety, prewarmNsfwModel } from './photos.js';
+import { createRoom, joinRoom, subscribeToRoom, startRoom, leaveRoom, updateRoomSettings } from './rooms.js';
 import { openLocationPicker } from './locationPicker.js';
 import { startSoloGame as startGame, startMultiplayerGame as startMP, clearSnapshot } from './game.js';
 import { showScreen, toast, escapeHtml } from './utils.js';
-import { confirmDelete } from './modals.js';
+import { confirmDelete, showGuidelinesIfNeeded } from './modals.js';
+import { showAdminNavBtn } from './main.js';
 
 let currentUser = null;
 let userPhotos = [];
@@ -19,7 +20,7 @@ let unsubRoomsList = null;
 let currentRoom = null;
 let eventsWired = false;
 let currentPage = 1;
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 19;
 
 // ── Init (called once at startup) ─────────────────────────────────────────
 export function initDashboard() {
@@ -36,6 +37,8 @@ export async function loadDashboard(user) {
   document.getElementById('nav-dropdown-name').textContent = name;
   document.getElementById('nav-dropdown-email').textContent = user.email ?? '';
   document.getElementById('play-hero-greeting').textContent = `Welcome back, ${name}`;
+  showAdminNavBtn(user);
+  prewarmNsfwModel(); // start loading model in background — doesn't block
   await Promise.all([refreshPhotos(), loadRooms()]);
   subscribeRoomsList();
 }
@@ -249,7 +252,11 @@ function renderPhotoGrid() {
   const paginationEl = document.getElementById('dash-pagination');
 
   if (userPhotos.length === 0) {
-    grid.innerHTML = '';
+    grid.innerHTML = `
+      <label class="photo-item photo-upload-tile" for="dash-file-input">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>Upload Photos</span>
+      </label>`;
     paginationEl.style.display = 'none';
     return;
   }
@@ -261,7 +268,13 @@ function renderPhotoGrid() {
   const start = (currentPage - 1) * PAGE_SIZE;
   const page = userPhotos.slice(start, start + PAGE_SIZE);
 
-  grid.innerHTML = page.map(p => `
+  const uploadTile = currentPage === 1 ? `
+    <label class="photo-item photo-upload-tile" for="dash-file-input">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span>Upload Photos</span>
+    </label>` : '';
+
+  grid.innerHTML = uploadTile + page.map(p => `
     <div class="photo-item" data-id="${p.id}">
       <img src="${p.public_url}" alt="${escapeHtml(p.original_name ?? '')}" loading="lazy">
       <div class="photo-item-overlay">
@@ -275,6 +288,7 @@ function renderPhotoGrid() {
           <button class="photo-item-btn" data-action="delete" data-id="${p.id}" data-path="${p.storage_path}" title="Delete">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           </button>
+
         </div>
       </div>
       <div class="photo-indicators">
@@ -286,13 +300,23 @@ function renderPhotoGrid() {
     </div>
   `).join('');
 
-  // Toggle selected on mobile/tablet; action buttons handle their own clicks
+  // Click behaviour: desktop = open lightbox, mobile = first tap selects, second tap opens lightbox
   grid.querySelectorAll('.photo-item').forEach(item => {
     item.addEventListener('click', () => {
-      if (window.matchMedia('(max-width: 768px)').matches) {
-        const isSelected = item.classList.contains('selected');
-        grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
-        if (!isSelected) item.classList.add('selected');
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
+      if (isMobile) {
+        if (item.classList.contains('selected')) {
+          // Second tap — open lightbox
+          const img = item.querySelector('img');
+          openDashLightbox(img.src, img.alt);
+        } else {
+          // First tap — select
+          grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
+          item.classList.add('selected');
+        }
+      } else {
+        const img = item.querySelector('img');
+        openDashLightbox(img.src, img.alt);
       }
     });
   });
@@ -388,6 +412,9 @@ async function handleDelete(photoId, storagePath) {
 
 // ── Upload ─────────────────────────────────────────────────────────────────
 async function handleFiles(files) {
+  const accepted = await showGuidelinesIfNeeded();
+  if (!accepted) return;
+
   const imageFiles = Array.from(files).filter(f => {
     const err = validateFile(f);
     if (err) { toast(err, 'error'); return false; }
@@ -400,6 +427,11 @@ async function handleFiles(files) {
   let uploaded = 0;
   for (let i = 0; i < imageFiles.length; i++) {
     showLoading(true, i, total);
+    const safetyErr = await checkImageSafety(imageFiles[i]);
+    if (safetyErr) {
+      toast(safetyErr, 'error');
+      continue;
+    }
     try {
       await uploadPhoto(imageFiles[i], currentUser.id);
       uploaded++;
@@ -503,6 +535,28 @@ function showRoomLobby(room, isHost) {
 }
 
 function renderRoomPlayers(room) {
+  const isHost = room.host_id === currentUser?.id;
+
+  // Sync rounds select
+  const roundsSelect = document.getElementById('room-rounds-select');
+  roundsSelect.value = room.rounds ?? 5;
+  roundsSelect.disabled = !isHost;
+  roundsSelect.style.opacity = isHost ? '' : '0.5';
+  roundsSelect.style.cursor = isHost ? '' : 'not-allowed';
+
+  // Sync community toggle state for all players from the room record
+  const communityToggle = document.getElementById('room-community-toggle');
+  const communityLabel = document.getElementById('room-community-label');
+  const communityOn = room.include_community ?? false;
+  communityToggle.checked = communityOn;
+  communityLabel.classList.toggle('is-on', communityOn);
+  communityToggle.disabled = !isHost;
+  communityLabel.style.opacity = isHost ? '' : '0.5';
+  communityLabel.style.cursor = isHost ? '' : 'not-allowed';
+  document.getElementById('room-community-sub').textContent = communityOn
+    ? "On — community photos included"
+    : "Off — only players' photos";
+
   const players = room.players ?? [];
   document.getElementById('room-player-count').textContent = players.length;
   document.getElementById('room-players-grid').innerHTML = players.map(p => {
@@ -521,7 +575,6 @@ function renderRoomPlayers(room) {
     </div>`;
   }).join('');
   // Enable start if host and 2+ players and at least someone has photos
-  const isHost = room.host_id === currentUser?.id;
   const totalPhotos = players.reduce((s, p) => s + (p.photo_ids ?? []).length, 0);
   const startBtn = document.getElementById('room-start-btn');
   if (startBtn) startBtn.disabled = !isHost || players.length < 2 || totalPhotos === 0;
@@ -534,18 +587,56 @@ async function startMultiplayerGame(room) {
   startMP(photos, room.id, currentUser.id, getDisplayName(currentUser), room.host_id === currentUser.id, room);
 }
 
+// ── Photo Lightbox ────────────────────────────────────────────────────────
+function openDashLightbox(src, alt) {
+  const overlay = document.createElement('div');
+  overlay.className = 'dash-lightbox';
+  overlay.innerHTML = `
+    <img src="${src}" alt="${alt}">
+    <button class="dash-lightbox-close" aria-label="Close">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  `;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('open')));
+
+  const close = () => {
+    overlay.classList.remove('open');
+    overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+  };
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('img').addEventListener('click', e => e.stopPropagation());
+  overlay.querySelector('.dash-lightbox-close').addEventListener('click', close);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); }, { once: true });
+}
+
 // ── Wire events ────────────────────────────────────────────────────────────
 function wireEvents() {
   if (eventsWired) return;
   eventsWired = true;
   // Upload
-  const dropZone = document.getElementById('dash-drop-zone');
   const fileInput = document.getElementById('dash-file-input');
-  dropZone.addEventListener('click', () => fileInput.click());
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
-  fileInput.addEventListener('change', e => { handleFiles(e.target.files); fileInput.value = ''; });
+  fileInput.addEventListener('change', e => { const files = Array.from(e.target.files); fileInput.value = ''; handleFiles(files); });
+
+  // Full-page drag overlay
+  const dragOverlay = document.getElementById('drag-overlay');
+  let dragCounter = 0;
+  document.addEventListener('dragenter', e => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    dragCounter++;
+    dragOverlay.classList.add('active');
+  });
+  document.addEventListener('dragleave', () => {
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; dragOverlay.classList.remove('active'); }
+  });
+  document.addEventListener('dragover', e => e.preventDefault());
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    dragCounter = 0;
+    dragOverlay.classList.remove('active');
+    if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files);
+  });
 
   // Play / room
   document.getElementById('dash-play-btn').addEventListener('click', startSoloGame);
@@ -573,8 +664,9 @@ function wireEvents() {
   document.getElementById('room-start-btn').addEventListener('click', async () => {
     if (!currentRoom) return;
     const rounds = parseInt(document.getElementById('room-rounds-select').value);
+    const includeCommunity = document.getElementById('room-community-toggle').checked;
     try {
-      await startRoom(currentRoom.id, rounds);
+      await startRoom(currentRoom.id, rounds, includeCommunity);
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -587,6 +679,31 @@ function wireEvents() {
     }
     clearSnapshot();
     showScreen('dashboard');
+  });
+
+  document.getElementById('room-rounds-select').addEventListener('change', async (e) => {
+    if (currentRoom) {
+      try {
+        await updateRoomSettings(currentRoom.id, { rounds: parseInt(e.target.value) });
+      } catch {
+        toast('Could not update setting.', 'error');
+      }
+    }
+  });
+
+  document.getElementById('room-community-toggle').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    document.getElementById('room-community-label').classList.toggle('is-on', on);
+    document.getElementById('room-community-sub').textContent = on
+      ? "On — community photos included"
+      : "Off — only players' photos";
+    if (currentRoom) {
+      try {
+        await updateRoomSettings(currentRoom.id, { include_community: on });
+      } catch {
+        toast('Could not update setting.', 'error');
+      }
+    }
   });
 
   // Delete room if host closes the tab

@@ -65,22 +65,41 @@ export async function joinRoom(code, userId, userName, photoIds = []) {
 /**
  * Start the game (host only). Shuffles photo_ids order.
  */
-export async function startRoom(roomId, roundCount) {
+export async function startRoom(roomId, roundCount, includeCommunity = false) {
   // Fetch the room to get all players and their photo_ids
   const { data: room, error: roomErr } = await supabase
-    .from('rooms').select('players').eq('id', roomId).single();
+    .from('rooms').select('players, include_community').eq('id', roomId).single();
   if (roomErr) throw roomErr;
+
+  const includeCommunityFinal = room.include_community ?? includeCommunity;
 
   // Pool all players' photo IDs
   const allPhotoIds = (room.players ?? []).flatMap(p => p.photo_ids ?? []);
-  if (!allPhotoIds.length) throw new Error('No photos with location data found in this room.');
 
   // Fetch the full photo records (host can read their own; RLS allows this)
-  const { data: photos, error: photoErr } = await supabase
-    .from('photos')
-    .select('id, public_url, lat, lng, original_name')
-    .in('id', allPhotoIds);
-  if (photoErr) throw photoErr;
+  let photos = [];
+  if (allPhotoIds.length) {
+    const { data, error: photoErr } = await supabase
+      .from('photos')
+      .select('id, public_url, lat, lng, original_name')
+      .in('id', allPhotoIds);
+    if (photoErr) throw photoErr;
+    photos = data ?? [];
+  }
+
+  // Merge in community photos if requested
+  if (includeCommunityFinal) {
+    const myIdSet = new Set(photos.map(p => p.id));
+    const { data: community } = await supabase
+      .from('photos')
+      .select('id, public_url, lat, lng, original_name')
+      .eq('is_public', true)
+      .not('lat', 'is', null)
+      .limit(200);
+    (community ?? []).filter(p => !myIdSet.has(p.id)).forEach(p => photos.push(p));
+  }
+
+  if (!photos.length) throw new Error('No photos with location data found in this room.');
 
   // Shuffle and cap at the selected round count
   const shuffled = [...photos].sort(() => Math.random() - 0.5).slice(0, roundCount);
@@ -131,6 +150,14 @@ export async function advanceRound(roomId, nextRound) {
 }
 
 /**
+ * Update room settings (host only).
+ */
+export async function updateRoomSettings(roomId, settings) {
+  const { error } = await supabase.from('rooms').update(settings).eq('id', roomId);
+  if (error) throw error;
+}
+
+/**
  * Mark room as finished.
  */
 export async function finishRoom(roomId) {
@@ -171,7 +198,10 @@ export function subscribeToRoom(roomId, callback) {
     .channel(`room:${roomId}`)
     .on('postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
-      (payload) => callback(payload.new))
+      async () => {
+        const { data } = await supabase.from('rooms').select('*').eq('id', roomId).single();
+        callback(data ?? null);
+      })
     .on('postgres_changes',
       { event: 'DELETE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
       () => callback(null))

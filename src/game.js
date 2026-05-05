@@ -246,6 +246,14 @@ function loadRound() {
   document.getElementById('submit-guess-btn').textContent = 'Confirm Guess';
   document.getElementById('game-map-pin-hint').classList.remove('hidden');
 
+  // Show report button only for community photos (not the player's own)
+  const reportBtn = document.getElementById('game-report-btn');
+  if (reportBtn) {
+    const isCommunity = photo.user_id && state.userId && photo.user_id !== state.userId;
+    reportBtn.classList.toggle('hidden', !isCommunity);
+    reportBtn.dataset.photoId = isCommunity ? photo.id : '';
+  }
+
   if (state.gameMap) {
     if (state.guessMarker) { state.gameMap.removeLayer(state.guessMarker); state.guessMarker = null; }
     state.gameMap.setView([20, 0], 2);
@@ -301,19 +309,15 @@ function showRoundResult(photo, guess, distKm, score, room) {
   const hint = document.getElementById('mp-waiting-text');
   if (hint) hint.id = 'game-map-pin-hint';
 
+  const total = state.photos.length;
+
   document.getElementById('rr-photo').src = photo.public_url;
   document.getElementById('rr-distance').textContent = formatDistance(distKm);
   document.getElementById('rr-guess-coords').textContent =
     guess ? `${guess.lat.toFixed(4)}, ${guess.lng.toFixed(4)}` : '—';
   document.getElementById('rr-actual-coords').textContent =
-    `${photo.lat.toFixed(4)}, ${photo.lng.toFixed(4)}`;
-
-  const pct = score / 5000;
-  const r = 34, circ = 2 * Math.PI * r;
-  document.getElementById('rr-ring-fill').setAttribute('stroke-dasharray', `${pct * circ} ${circ}`);
+    `Actual: ${photo.lat.toFixed(4)}, ${photo.lng.toFixed(4)}`;
   document.getElementById('rr-score-num').textContent = score.toLocaleString();
-
-  const total = state.photos.length;
   document.getElementById('rr-round-label').textContent = `Round ${state.currentRound + 1} of ${total}`;
 
   // Multiplayer scoreboard
@@ -473,11 +477,10 @@ function showFinalScreen() {
         </div>`;
     }).join('');
     mpLeaderboard.closest('.final-mp-wrap').classList.remove('hidden');
-    // Hide solo breakdown in multiplayer
-    document.getElementById('final-breakdown').closest('.breakdown-list')?.classList.add('hidden');
+    document.getElementById('final-solo-section')?.classList.add('hidden');
   } else {
     mpLeaderboard?.closest('.final-mp-wrap')?.classList.add('hidden');
-    // Solo breakdown
+    document.getElementById('final-solo-section')?.classList.remove('hidden');
     const sorted = [...results].sort((a, b) => b.score - a.score);
     document.getElementById('final-breakdown').innerHTML = sorted.map((r, i) => {
       const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-n';
