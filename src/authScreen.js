@@ -94,8 +94,8 @@ function toggleMode() {
   isSignUp = !isSignUp;
   document.getElementById('auth-title').textContent = isSignUp ? 'Create account' : 'Sign in';
   document.getElementById('auth-sub').textContent = isSignUp
-    ? 'Join Where Were We — it\'s free'
-    : 'Welcome back to Where Were We';
+    ? 'Start placing your memories on the map'
+    : 'Good to see you again. Your photos are waiting.';
   document.getElementById('auth-submit-btn').textContent = isSignUp ? 'Create account' : 'Sign in';
   document.getElementById('auth-toggle-text').textContent = isSignUp ? 'Already have an account?' : 'Don\'t have an account?';
   document.getElementById('auth-toggle-link').textContent = isSignUp ? ' Sign in' : ' Sign up';

@@ -3,7 +3,8 @@
  * Entry point — renders all screen HTML, then initialises controllers.
  */
 
-import { showScreen } from './utils.js';
+import { showScreen, toast } from './utils.js';
+import { supabase } from './supabase.js';
 import { initAuth } from './authScreen.js';
 import { initDashboard } from './dashboardScreen.js';
 import { initLocationPicker } from './locationPicker.js';
@@ -254,7 +255,7 @@ document.getElementById('app').innerHTML = `
         <img src="/logo-black.png" alt="Where Were We" style="height:70px;width:auto;">
       </div>
       <div class="auth-title" id="auth-title">Sign in</div>
-      <div class="auth-sub" id="auth-sub">Welcome back to Where Were We</div>
+      <div class="auth-sub" id="auth-sub">Good to see you again. Your photos are waiting.</div>
     </div>
     <div class="auth-error" id="auth-error"></div>
     <div id="auth-username-field" class="auth-field hidden">
@@ -922,11 +923,9 @@ reportSubmit.addEventListener('click', async () => {
   reportSubmit.disabled = true;
   reportSubmit.textContent = 'Submitting…';
   try {
-    const { supabase } = await import('./supabase.js');
     const { data: { user } } = await supabase.auth.getUser();
     await supabase.from('photo_reports').insert({ photo_id: photoId, reason, reporter_id: user?.id });
     document.getElementById('report-cancel-btn').click();
-    const { toast } = await import('./utils.js');
     toast('Report submitted. Thank you!', 'success');
   } catch {
     reportSubmit.disabled = false;
@@ -1164,7 +1163,7 @@ ownCheckbox.addEventListener('change', () => {
   if (!ownCheckbox.checked && !communityCheckbox.checked) {
     ownCheckbox.checked = true;
     ownCheckbox.closest('.source-chip').classList.add('is-on');
-    import('./utils.js').then(m => m.toast('At least one photo source must be active.', 'error'));
+    toast('At least one photo source must be active.', 'error');
     return;
   }
   ownCheckbox.closest('.source-chip').classList.toggle('is-on', ownCheckbox.checked);
@@ -1174,7 +1173,7 @@ communityCheckbox.addEventListener('change', () => {
   if (!communityCheckbox.checked && !ownCheckbox.checked) {
     communityCheckbox.checked = true;
     communityCheckbox.closest('.source-chip').classList.add('is-on');
-    import('./utils.js').then(m => m.toast('At least one photo source must be active.', 'error'));
+    toast('At least one photo source must be active.', 'error');
     return;
   }
   communityCheckbox.closest('.source-chip').classList.toggle('is-on', communityCheckbox.checked);
