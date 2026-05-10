@@ -18,6 +18,14 @@ export async function signUp(email, password, username) {
 export async function signIn(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
+
+  // Check suspension before allowing access
+  const { data: suspended } = await supabase.rpc('check_user_suspended', { p_user_id: data.user.id });
+  if (suspended) {
+    await supabase.auth.signOut().catch(() => {});
+    throw new Error('Your account has been suspended. Please contact support.');
+  }
+
   return data.user;
 }
 

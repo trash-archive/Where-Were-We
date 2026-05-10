@@ -22,7 +22,7 @@ export async function createRoom(hostUserId, hostName, settings = {}) {
       status: 'waiting',
       rounds: settings.rounds ?? 5,
       photo_ids: settings.photoIds ?? [],
-      players: [{ id: hostUserId, name: hostName, score: 0, ready: true, is_host: true, photo_ids: settings.photoIds ?? [] }],
+      players: [{ id: hostUserId, name: hostName, score: 0, ready: true, is_host: true, photo_ids: settings.photoIds ?? [], include_own: settings.includeOwn ?? true }],
     })
     .select()
     .single();
@@ -48,7 +48,7 @@ export async function joinRoom(code, userId, userName, photoIds = []) {
 
   const updatedPlayers = [
     ...room.players,
-    { id: userId, name: userName, score: 0, ready: false, is_host: false, photo_ids: photoIds },
+    { id: userId, name: userName, score: 0, ready: false, is_host: false, photo_ids: photoIds, include_own: true },
   ];
 
   const { data, error } = await supabase
@@ -73,8 +73,10 @@ export async function startRoom(roomId, roundCount, includeCommunity = false) {
 
   const includeCommunityFinal = room.include_community ?? includeCommunity;
 
-  // Pool all players' photo IDs
-  const allPhotoIds = (room.players ?? []).flatMap(p => p.photo_ids ?? []);
+  // Pool all players' photo IDs (respecting each player's include_own preference)
+  const allPhotoIds = (room.players ?? []).flatMap(p =>
+    (p.include_own !== false) ? (p.photo_ids ?? []) : []
+  );
 
   // Fetch the full photo records (host can read their own; RLS allows this)
   let photos = [];
@@ -163,6 +165,27 @@ export async function updateRoomSettings(roomId, settings) {
 export async function finishRoom(roomId) {
   const { error } = await supabase.from('rooms').update({ status: 'finished' }).eq('id', roomId);
   if (error) throw error;
+}
+
+/**
+ * Kick a player (host only).
+ */
+export async function kickPlayer(roomId, playerId) {
+  const { data: room } = await supabase.from('rooms').select('players,host_id,kicked').eq('id', roomId).single();
+  if (!room) return;
+  const players = room.players.filter(p => p.id !== playerId);
+  const kicked = [...(room.kicked ?? []), playerId];
+  await supabase.from('rooms').update({ players, kicked }).eq('id', roomId);
+}
+
+/**
+ * Update a single player's include_own preference.
+ */
+export async function updatePlayerIncludeOwn(roomId, userId, includeOwn) {
+  const { data: room } = await supabase.from('rooms').select('players').eq('id', roomId).single();
+  if (!room) return;
+  const players = room.players.map(p => p.id === userId ? { ...p, include_own: includeOwn } : p);
+  await supabase.from('rooms').update({ players }).eq('id', roomId);
 }
 
 /**

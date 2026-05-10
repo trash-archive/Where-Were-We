@@ -6,12 +6,21 @@
 import { supabase } from './supabase.js';
 import { signOut, getDisplayName } from './auth.js';
 import { validateFile, uploadPhoto, getUserPhotos, deletePhoto, updatePhotoLocation, togglePhotoPublic, getPublicPhotos, checkImageSafety, prewarmNsfwModel } from './photos.js';
-import { createRoom, joinRoom, subscribeToRoom, startRoom, leaveRoom, updateRoomSettings } from './rooms.js';
+import { createRoom, joinRoom, subscribeToRoom, startRoom, leaveRoom, updateRoomSettings, kickPlayer, updatePlayerIncludeOwn } from './rooms.js';
 import { openLocationPicker } from './locationPicker.js';
-import { startSoloGame as startGame, startMultiplayerGame as startMP, clearSnapshot } from './game.js';
+import { startSoloGame as startGame, startMultiplayerGame as startMP, clearSnapshot, getGameStats } from './game.js';
 import { showScreen, toast, escapeHtml } from './utils.js';
 import { confirmDelete, showGuidelinesIfNeeded } from './modals.js';
 import { showAdminNavBtn } from './main.js';
+
+// ── Suspension guard ───────────────────────────────────────────────────────
+async function assertNotSuspended() {
+  const { data: suspended } = await supabase.rpc('check_user_suspended', { p_user_id: currentUser.id });
+  if (suspended) {
+    await signOut().catch(() => {});
+    throw new Error('Your account has been suspended.');
+  }
+}
 
 let currentUser = null;
 let userPhotos = [];
@@ -39,6 +48,7 @@ export async function loadDashboard(user) {
   document.getElementById('play-hero-greeting').textContent = `Welcome back, ${name}`;
   showAdminNavBtn(user);
   prewarmNsfwModel(); // start loading model in background — doesn't block
+  renderGameStats(user.id);
   await Promise.all([refreshPhotos(), loadRooms()]);
   subscribeRoomsList();
 }
@@ -75,12 +85,23 @@ function updateStats() {
   if (countEl) countEl.textContent = userPhotos.length > 0 ? `${userPhotos.length} photo${userPhotos.length !== 1 ? 's' : ''}` : '';
 }
 
+export function renderGameStats(userId) {
+  const { games, best } = getGameStats(userId);
+  document.getElementById('stat-games-played').textContent = games > 0 ? games.toLocaleString() : '—';
+  document.getElementById('stat-best-score').textContent = best !== null ? best.toLocaleString() : '—';
+}
+
 // ── Rejoin active room after page reload ─────────────────────────────────
 export async function rejoinActiveRoom(roomId) {
   try {
     const { data: room, error } = await supabase
       .from('rooms').select('*').eq('id', roomId).single();
     if (error || !room) {
+      sessionStorage.removeItem('activeRoomId');
+      return false;
+    }
+    // Don't rejoin if kicked
+    if ((room.kicked ?? []).includes(currentUser.id)) {
       sessionStorage.removeItem('activeRoomId');
       return false;
     }
@@ -426,6 +447,8 @@ async function handleFiles(files) {
   const accepted = await showGuidelinesIfNeeded();
   if (!accepted) return;
 
+  try { await assertNotSuspended(); } catch (e) { toast(e.message, 'error'); return; }
+
   const imageFiles = Array.from(files).filter(f => {
     const err = validateFile(f);
     if (err) { toast(err, 'error'); return false; }
@@ -460,12 +483,14 @@ async function handleFiles(files) {
 
 // ── Solo game ──────────────────────────────────────────────────────────────
 export async function startSoloGame() {
+  try { await assertNotSuspended(); } catch (e) { toast(e.message, 'error'); return; }
   const playable = userPhotos.filter(p => p.lat !== null);
   if (playable.length === 0) {
     toast('No photos with location data. Set locations first.', 'error');
     return;
   }
-  let photos = [...playable];
+  const includeOwn = document.getElementById('include-own-toggle')?.checked !== false;
+  let photos = includeOwn ? [...playable] : [];
   if (document.getElementById('include-community-toggle')?.checked) {
     try {
       const community = await getPublicPhotos(100);
@@ -476,11 +501,16 @@ export async function startSoloGame() {
       toast('Could not load community photos.', 'error');
     }
   }
+  if (photos.length === 0) {
+    toast('No photos to play with. Enable community photos or include your own.', 'error');
+    return;
+  }
   startGame(photos, currentUser.id);
 }
 
 // ── Multiplayer ────────────────────────────────────────────────────────────
 async function handleCreateRoom() {
+  try { await assertNotSuspended(); } catch (e) { toast(e.message, 'error'); return; }
   const playable = userPhotos.filter(p => p.lat !== null);
   if (playable.length === 0) {
     toast('Upload photos with locations first.', 'error');
@@ -488,15 +518,9 @@ async function handleCreateRoom() {
   }
   showLoading(true);
   try {
-    let photoIds = playable.map(p => p.id);
-    if (document.getElementById('include-community-toggle')?.checked) {
-      try {
-        const community = await getPublicPhotos(100);
-        const myIdSet = new Set(photoIds);
-        community.filter(p => !myIdSet.has(p.id)).forEach(p => photoIds.push(p.id));
-      } catch {}
-    }
-    const room = await createRoom(currentUser.id, getDisplayName(currentUser), { photoIds });
+    const includeOwn = document.getElementById('include-own-toggle')?.checked !== false;
+    const photoIds = playable.map(p => p.id);
+    const room = await createRoom(currentUser.id, getDisplayName(currentUser), { photoIds, includeOwn });
     currentRoom = room;
     showRoomLobby(room, true);
     subscribeRoom(room.id);
@@ -519,15 +543,32 @@ export async function joinRoomByCode(code) {
   }
 }
 
+async function handleKickPlayer(playerId) {
+  if (!currentRoom) return;
+  try {
+    await kickPlayer(currentRoom.id, playerId);
+  } catch {
+    toast('Could not kick player.', 'error');
+  }
+}
+
 function subscribeRoom(roomId) {
   if (unsubRoom) unsubRoom();
   unsubRoom = subscribeToRoom(roomId, (updated) => {
-    // null means the room was deleted (host left or disconnected)
     if (!updated) {
       if (unsubRoom) { unsubRoom(); unsubRoom = null; }
       currentRoom = null;
       showScreen('dashboard');
       toast('The host closed the room.', 'error');
+      return;
+    }
+    // Check if current user was kicked
+    const wasKicked = (updated.kicked ?? []).includes(currentUser.id);
+    if (wasKicked) {
+      if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+      currentRoom = null;
+      showScreen('dashboard');
+      toast('You were removed from the room by the host.', 'error');
       return;
     }
     currentRoom = updated;
@@ -568,27 +609,74 @@ function renderRoomPlayers(room) {
     ? "On — community photos included"
     : "Off — only players' photos";
 
+  // Sync include-own toggle for current user (room setting row removed — handled via player card button)
+  const myPlayer = (room.players ?? []).find(p => p.id === currentUser?.id);
+  const includeOwnOn = myPlayer?.include_own !== false;
+  const includeOwnToggle = document.getElementById('room-include-own-toggle');
+  const includeOwnLabel = document.getElementById('room-include-own-label');
+  if (includeOwnToggle && includeOwnLabel) {
+    includeOwnToggle.checked = includeOwnOn;
+    includeOwnLabel.classList.toggle('is-on', includeOwnOn);
+    document.getElementById('room-include-own-sub').textContent = includeOwnOn
+      ? "On — your photos are in the pool"
+      : "Off — your photos excluded";
+  }
+
   const players = room.players ?? [];
   document.getElementById('room-player-count').textContent = players.length;
   document.getElementById('room-players-grid').innerHTML = players.map(p => {
     const photoCount = (p.photo_ids ?? []).length;
+    const includeOwn = p.include_own !== false;
+    const isMe = p.id === currentUser?.id;
     return `
     <div class="room-player-card card-flat">
       <div class="room-player-avatar">${escapeHtml(p.name.slice(0,2).toUpperCase())}</div>
       <div class="room-player-name">${escapeHtml(p.name)}</div>
-      <div class="room-player-status" style="display:flex;align-items:center;gap:6px;">
+      <div class="room-player-status" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         ${p.is_host ? '<span class="badge badge-blue">Host</span>' : '<span class="badge badge-gray">Player</span>'}
-        <span class="badge badge-green" title="Photos with GPS">
+        <span class="badge ${includeOwn ? 'badge-green' : 'badge-gray'}" title="Photos with GPS">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-          ${photoCount}
+          ${includeOwn ? photoCount : '0 (excluded)'}
         </span>
+        ${isMe && !p.is_host ? `<button class="btn btn-ghost btn-sm room-include-own-btn" data-player-id="${p.id}" data-include="${includeOwn}" title="${includeOwn ? 'Exclude my photos' : 'Include my photos'}" style="font-size:11px;padding:2px 6px;">${includeOwn ? 'Exclude mine' : 'Include mine'}</button>` : ''}
+        ${isHost && !p.is_host ? `<button class="btn btn-danger btn-sm room-kick-btn" data-player-id="${p.id}" style="font-size:11px;padding:2px 6px;">Kick</button>` : ''}
       </div>
     </div>`;
   }).join('');
-  // Enable start if host and 2+ players and at least someone has photos
-  const totalPhotos = players.reduce((s, p) => s + (p.photo_ids ?? []).length, 0);
+
+  // Wire kick buttons
+  document.getElementById('room-players-grid').querySelectorAll('.room-kick-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleKickPlayer(btn.dataset.playerId));
+  });
+
+  // Wire include-own toggle buttons
+  document.getElementById('room-players-grid').querySelectorAll('.room-include-own-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const currentVal = btn.dataset.include === 'true';
+      const newVal = !currentVal;
+      // Validate: can't exclude own photos if it would leave zero sources
+      if (!newVal) {
+        const communityOn = currentRoom?.include_community ?? false;
+        const otherPhotos = (currentRoom?.players ?? [])
+          .filter(p => p.id !== currentUser.id && p.include_own !== false)
+          .reduce((s, p) => s + (p.photo_ids ?? []).length, 0);
+        if (!communityOn && otherPhotos === 0) {
+          toast('At least one photo source must be active.', 'error');
+          return;
+        }
+      }
+      try {
+        await updatePlayerIncludeOwn(currentRoom.id, currentUser.id, newVal);
+      } catch {
+        toast('Could not update preference.', 'error');
+      }
+    });
+  });
+
+  // Enable start if host and 2+ players and at least someone contributes photos
+  const totalPhotos = players.reduce((s, p) => s + ((p.include_own !== false) ? (p.photo_ids ?? []).length : 0), 0);
   const startBtn = document.getElementById('room-start-btn');
-  if (startBtn) startBtn.disabled = !isHost || players.length < 2 || totalPhotos === 0;
+  if (startBtn) startBtn.disabled = !isHost || players.length < 2 || (totalPhotos === 0 && !communityOn);
 }
 
 async function startMultiplayerGame(room) {
@@ -713,6 +801,34 @@ function wireEvents() {
         await updateRoomSettings(currentRoom.id, { include_community: on });
       } catch {
         toast('Could not update setting.', 'error');
+      }
+    }
+  });
+
+  document.getElementById('room-include-own-toggle').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    // Validate: can't turn off own photos if community is also off and no other player has photos
+    if (!on) {
+      const communityOn = document.getElementById('room-community-toggle')?.checked;
+      const otherPhotos = (currentRoom?.players ?? [])
+        .filter(p => p.id !== currentUser.id && p.include_own !== false)
+        .reduce((s, p) => s + (p.photo_ids ?? []).length, 0);
+      if (!communityOn && otherPhotos === 0) {
+        e.target.checked = true; // revert
+        document.getElementById('room-include-own-label').classList.add('is-on');
+        toast('At least one photo source must be active.', 'error');
+        return;
+      }
+    }
+    document.getElementById('room-include-own-label').classList.toggle('is-on', on);
+    document.getElementById('room-include-own-sub').textContent = on
+      ? "On — your photos are in the pool"
+      : "Off — your photos excluded";
+    if (currentRoom) {
+      try {
+        await updatePlayerIncludeOwn(currentRoom.id, currentUser.id, on);
+      } catch {
+        toast('Could not update preference.', 'error');
       }
     }
   });

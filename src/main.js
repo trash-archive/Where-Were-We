@@ -8,11 +8,114 @@ import { initAuth } from './authScreen.js';
 import { initDashboard } from './dashboardScreen.js';
 import { initLocationPicker } from './locationPicker.js';
 import { initDeleteModal, initGuidelinesModal, showGuidelinesModal } from './modals.js';
-import { nextRound, submitGuess, invalidateGameMap, panGameMap, placeGamePin, clearSnapshot, quitGame, playAgain } from './game.js';
-import { startSoloGame, joinRoomByCode } from './dashboardScreen.js';
-import { isAdmin, loadAdminPanel, ADMIN_EMAIL } from './adminScreen.js';
+import { nextRound, submitGuess, invalidateGameMap, panGameMap, placeGamePin, clearSnapshot, quitGame, playAgain, gameState } from './game.js';
+import { startSoloGame, joinRoomByCode, renderGameStats } from './dashboardScreen.js';
+import { isAdmin, loadAdminPanel } from './adminScreen.js';
 // ── Render all screens ────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
+
+<!-- CONTACT ADMIN MODAL -->
+<div id="contact-admin-modal" class="modal-overlay">
+  <div class="modal-box contact-admin-box">
+    <div class="modal-header">
+      <div class="modal-title">Contact Admin</div>
+      <button class="btn btn-ghost btn-sm" id="contact-admin-close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="contact-admin-body">
+      <div class="contact-admin-profile">
+        <img src="/hasim-full.jpg" alt="Hasim Tordios" class="contact-admin-photo">
+        <div class="contact-admin-name">Hasim Tordios</div>
+        <div class="contact-admin-role">App Administrator</div>
+      </div>
+      <div class="contact-admin-links">
+        <a href="mailto:htordios@gmail.com" class="contact-link" target="_blank">
+          <span class="contact-link-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          </span>
+          <span>htordios@gmail.com</span>
+        </a>
+        <a href="https://www.instagram.com/_hqsim/" class="contact-link" target="_blank" rel="noopener">
+          <span class="contact-link-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+          </span>
+          <span>@_hqsim</span>
+        </a>
+        <a href="https://www.facebook.com/trazhhh/" class="contact-link" target="_blank" rel="noopener">
+          <span class="contact-link-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+          </span>
+          <span>Messenger / Facebook</span>
+        </a>
+        <a href="https://www.linkedin.com/in/hasim-tordios" class="contact-link" target="_blank" rel="noopener">
+          <span class="contact-link-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
+          </span>
+          <span>LinkedIn</span>
+        </a>
+
+        <a href="https://github.com/trash-archive" class="contact-link contact-link--disabled" aria-disabled="true" tabindex="-1">
+          <span class="contact-link-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.2c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S9 17.44 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+          </span>
+          <span>GitHub <span class="contact-link-soon">coming soon</span></span>
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HOW TO PLAY MODAL -->
+<div id="how-to-play-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">How to Play</div>
+      <button class="btn btn-ghost btn-sm" id="htp-close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="htp-modal-body">
+      <ol class="htp-steps">
+        <li>
+          <span class="htp-step-num">1</span>
+          <div>
+            <div class="htp-step-title">Upload photos with GPS</div>
+            <div class="htp-step-desc">Add photos taken on your phone or camera. Location data is read automatically, or you can pin it manually.</div>
+          </div>
+        </li>
+        <li>
+          <span class="htp-step-num">2</span>
+          <div>
+            <div class="htp-step-title">A photo is shown — guess where it was taken</div>
+            <div class="htp-step-desc">Drop a pin on the world map as close as you can to the real location. You can search for a place or zoom in.</div>
+          </div>
+        </li>
+        <li>
+          <span class="htp-step-num">3</span>
+          <div>
+            <div class="htp-step-title">Score based on distance</div>
+            <div class="htp-step-desc">The closer your guess, the more points you earn — up to 5,000 per round. See the result on the map after each guess.</div>
+          </div>
+        </li>
+        <li>
+          <span class="htp-step-num">4</span>
+          <div>
+            <div class="htp-step-title">Play solo or with friends</div>
+            <div class="htp-step-desc">Solo mode cycles through your photo pool. In multiplayer, create or join a room — everyone guesses the same photos and scores are compared live.</div>
+          </div>
+        </li>
+      </ol>
+      <div class="htp-tip">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <span>Enable <strong>Community</strong> in Photo sources to mix in other players' public photos for more variety.</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="htp-got-it">Got it</button>
+    </div>
+  </div>
+</div>
 
 <!-- GUIDELINES MODAL -->
 <div id="guidelines-modal" class="modal-overlay">
@@ -137,7 +240,15 @@ document.getElementById('app').innerHTML = `
 
 <!-- AUTH -->
 <div id="screen-auth" class="screen">
-  <div class="auth-card card" style="margin:auto;">
+  <div id="auth-bg-map" class="auth-bg-map"></div>
+  <div class="auth-bg-overlay"></div>
+  <div class="auth-layout">
+    <div class="auth-brand-title" aria-hidden="true">
+      <span class="auth-brand-where">Where</span>
+      <span class="auth-brand-were">Were</span>
+      <span class="auth-brand-we">We</span>
+    </div>
+    <div class="auth-card card">
     <div class="auth-logo">
       <div class="auth-logo-mark">
         <img src="/logo-black.png" alt="Where Were We" style="height:70px;width:auto;">
@@ -171,6 +282,10 @@ document.getElementById('app').innerHTML = `
       <span id="auth-toggle-text">Don't have an account?</span>
       <a id="auth-toggle-link"> Sign up</a>
     </div>
+    <div class="auth-contact-link">
+      <a id="auth-contact-admin-btn">Contact Admin</a>
+    </div>
+  </div>
   </div>
 </div>
 
@@ -198,8 +313,8 @@ document.getElementById('app').innerHTML = `
             Sign out
           </button>
           <button class="nav-dropdown-item hidden" id="nav-admin-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-            Reported Photos
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            Admin Panel
           </button>
         </div>
       </div>
@@ -209,10 +324,22 @@ document.getElementById('app').innerHTML = `
 
     <!-- Play hero -->
     <div class="play-hero">
+      <div id="hero-map" class="hero-map"></div>
       <div class="play-hero-text">
         <div class="play-hero-greeting" id="play-hero-greeting">Welcome back</div>
         <div class="play-hero-title">Ready to guess?</div>
         <div class="play-hero-sub" id="play-hero-sub">Upload photos with GPS and start playing</div>
+        <div class="hero-stats" id="dash-stats-section">
+          <div class="hero-stat">
+            <span class="hero-stat-val" id="stat-games-played">—</span>
+            <span class="hero-stat-lbl">Games</span>
+          </div>
+          <div class="hero-stat-sep"></div>
+          <div class="hero-stat">
+            <span class="hero-stat-val" id="stat-best-score">—</span>
+            <span class="hero-stat-lbl">Best score</span>
+          </div>
+        </div>
       </div>
       <div class="play-hero-actions">
         <div class="play-hero-btns">
@@ -225,16 +352,28 @@ document.getElementById('app').innerHTML = `
             Multiplayer
           </button>
         </div>
-        <label class="community-toggle-label" for="include-community-toggle">
-          <input type="checkbox" id="include-community-toggle" class="community-toggle-input">
-          <span class="community-toggle-track">
-            <span class="community-toggle-thumb"></span>
-          </span>
-          <span class="community-toggle-text">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            Include community photos
-          </span>
-        </label>
+        <div class="photo-source-chips">
+          <div class="photo-source-label-row">
+            <span class="photo-source-label">Photo sources</span>
+            <button id="how-to-play-btn" title="How to play" class="htp-icon-btn">?</button>
+          </div>
+          <div class="photo-source-row">
+            <label class="source-chip" for="include-own-toggle">
+              <input type="checkbox" id="include-own-toggle" class="source-chip-input" checked>
+              <span class="source-chip-inner">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                My photos
+              </span>
+            </label>
+            <label class="source-chip" for="include-community-toggle">
+              <input type="checkbox" id="include-community-toggle" class="source-chip-input">
+              <span class="source-chip-inner">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                Community
+              </span>
+            </label>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -242,8 +381,8 @@ document.getElementById('app').innerHTML = `
     <div class="section">
       <div class="section-header">
         <div class="section-title">Multiplayer Rooms</div>
-        <button class="btn btn-secondary btn-sm" id="dash-join-btn">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <button class="btn-join-code" id="dash-join-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           Join with Code
         </button>
       </div>
@@ -280,6 +419,12 @@ document.getElementById('app').innerHTML = `
       <input type="file" id="dash-file-input" multiple accept="image/*" style="display:none">
       <div id="dash-photo-grid" class="photo-grid"></div>
       <div id="dash-pagination" class="pagination" style="display:none;"></div>
+    </div>
+
+    <!-- Contact Admin footer -->
+    <div class="dash-contact-footer">
+      <span>Need help or want to report an issue?</span>
+      <a id="dash-contact-admin-btn" class="dash-contact-link">Contact Admin</a>
     </div>
 
   </div>
@@ -329,6 +474,18 @@ document.getElementById('app').innerHTML = `
           <option value="5" selected>5</option>
           <option value="10">10</option>
         </select>
+      </div>
+      <div class="room-setting-row">
+        <div>
+          <div class="room-setting-label">Include My Photos</div>
+          <div class="room-setting-sub" id="room-include-own-sub">On — your photos are in the pool</div>
+        </div>
+        <label class="community-toggle-label" id="room-include-own-label" for="room-include-own-toggle">
+          <input type="checkbox" id="room-include-own-toggle" class="community-toggle-input" checked>
+          <span class="community-toggle-track">
+            <span class="community-toggle-thumb"></span>
+          </span>
+        </label>
       </div>
       <div class="room-setting-row">
         <div>
@@ -558,12 +715,12 @@ document.getElementById('app').innerHTML = `
       Back
     </button>
     <div class="navbar-brand" style="margin-left:8px;">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-      Reported Photos
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      Admin Panel
     </div>
   </nav>
   <div class="admin-layout">
-    <div id="admin-reports-list"></div>
+    <div id="admin-panel-wrap"></div>
   </div>
 </div>
 
@@ -594,6 +751,22 @@ document.getElementById('app').innerHTML = `
   </div>
 </div>
 
+<!-- KICKED MODAL -->
+<div id="kicked-modal" class="modal-overlay">
+  <div class="modal-box" style="text-align:center;">
+    <div class="modal-body" style="padding:40px 32px 28px;">
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--red-light);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:8px;">Removed from room</div>
+      <p style="font-size:14px;color:var(--gray-500);line-height:1.6;margin-bottom:0;">The host removed you from the room.</p>
+    </div>
+    <div class="modal-footer" style="justify-content:center;padding-bottom:28px;">
+      <button class="btn btn-primary" id="kicked-ok">Back to Dashboard</button>
+    </div>
+  </div>
+</div>
+
 <!-- HOST ENDED MODAL -->
 <div id="host-ended-modal" class="modal-overlay">
   <div class="modal-box" style="text-align:center;">
@@ -618,6 +791,95 @@ initGuidelinesModal();
 initAuth();
 initDashboard();
 
+// ── Hero background map ───────────────────────────────────────────────────
+(function initHeroMap() {
+  const el = document.getElementById('hero-map');
+  if (!el || typeof L === 'undefined') return;
+  const map = L.map(el, {
+    center: [20, 10],
+    zoom: 3,
+    zoomControl: false,
+    attributionControl: false,
+    dragging: false,
+    touchZoom: false,
+    scrollWheelZoom: false,
+    doubleClickZoom: false,
+    boxZoom: false,
+    keyboard: false,
+    tap: false,
+    preferCanvas: true,
+  });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(map);
+  // Leaflet can't measure size until the element is visible in the DOM
+  setTimeout(() => map.invalidateSize(), 100);
+  // Re-measure whenever the dashboard screen is shown (e.g. after login)
+  const observer = new MutationObserver(() => {
+    const dash = document.getElementById('screen-dashboard');
+    if (dash?.classList.contains('active')) map.invalidateSize();
+  });
+  const dash = document.getElementById('screen-dashboard');
+  if (dash) observer.observe(dash, { attributes: true, attributeFilter: ['class'] });
+})();
+
+// ── Auth background map ───────────────────────────────────────────────────
+(function initAuthBgMap() {
+  const el = document.getElementById('auth-bg-map');
+  if (!el || typeof L === 'undefined') return;
+  const map = L.map(el, {
+    center: [30, 15],
+    zoom: 3,
+    zoomControl: false,
+    attributionControl: false,
+    dragging: false,
+    touchZoom: false,
+    scrollWheelZoom: false,
+    doubleClickZoom: false,
+    boxZoom: false,
+    keyboard: false,
+    tap: false,
+    preferCanvas: true,
+  });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(map);
+  setTimeout(() => map.invalidateSize(), 100);
+  const authScreen = document.getElementById('screen-auth');
+  if (authScreen) {
+    new MutationObserver(() => {
+      if (authScreen.classList.contains('active')) map.invalidateSize();
+    }).observe(authScreen, { attributes: true, attributeFilter: ['class'] });
+  }
+})();
+
+// ── Contact Admin modal ───────────────────────────────────────────────────
+function openContactAdmin() {
+  document.getElementById('contact-admin-modal').classList.add('open');
+}
+document.getElementById('contact-admin-close').addEventListener('click', () => {
+  document.getElementById('contact-admin-modal').classList.remove('open');
+});
+document.getElementById('contact-admin-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('contact-admin-modal'))
+    document.getElementById('contact-admin-modal').classList.remove('open');
+});
+document.getElementById('auth-contact-admin-btn').addEventListener('click', openContactAdmin);
+document.getElementById('dash-contact-admin-btn').addEventListener('click', openContactAdmin);
+// Prevent disabled GitHub link from navigating
+document.querySelector('.contact-link--disabled')?.addEventListener('click', e => e.preventDefault());
+
+// ── How to Play modal ────────────────────────────────────────────────
+const htpModal = document.getElementById('how-to-play-modal');
+function openHtp() { htpModal.classList.add('open'); }
+function closeHtp() { htpModal.classList.remove('open'); }
+document.getElementById('how-to-play-btn').addEventListener('click', openHtp);
+document.getElementById('htp-close').addEventListener('click', closeHtp);
+document.getElementById('htp-got-it').addEventListener('click', closeHtp);
+htpModal.addEventListener('click', e => { if (e.target === htpModal) closeHtp(); });
+
 // ── Guidelines info button ────────────────────────────────────────────────
 document.getElementById('guidelines-info-btn').addEventListener('click', () => showGuidelinesModal());
 
@@ -626,7 +888,13 @@ document.getElementById('nav-admin-btn').addEventListener('click', () => {
   showScreen('admin');
   loadAdminPanel();
 });
-document.getElementById('admin-back-btn').addEventListener('click', () => showScreen('dashboard'));
+document.getElementById('admin-back-btn').addEventListener('click', () => {
+  // Reset so next open re-fetches fresh data
+  const wrap = document.getElementById('admin-panel-wrap');
+  wrap.innerHTML = '';
+  delete wrap.dataset.ready;
+  showScreen('dashboard');
+});
 
 // Expose showAdminBtn so dashboardScreen can call it after login
 export function showAdminNavBtn(user) {
@@ -669,7 +937,7 @@ reportSubmit.addEventListener('click', async () => {
 // ── Game buttons ──────────────────────────────────────────────────────────
 document.getElementById('submit-guess-btn').addEventListener('click', () => { closeMapDrawer(); submitGuess(); });
 document.getElementById('rr-next-btn').addEventListener('click', () => { closeMapDrawer(); nextRound(); });
-document.getElementById('final-dashboard-btn').addEventListener('click', () => { clearSnapshot(); showScreen('dashboard'); });
+document.getElementById('final-dashboard-btn').addEventListener('click', () => { clearSnapshot(); showScreen('dashboard'); if (gameState.userId) renderGameStats(gameState.userId); });
 document.getElementById('final-play-again-btn').addEventListener('click', playAgain);
 
 // ── Report photo during gameplay ──────────────────────────────────────────
@@ -694,6 +962,10 @@ document.getElementById('quit-modal-confirm').addEventListener('click', () => {
 document.getElementById('host-ended-ok').addEventListener('click', () => {
   document.getElementById('host-ended-modal').classList.remove('open');
   clearSnapshot();
+  showScreen('dashboard');
+});
+document.getElementById('kicked-ok').addEventListener('click', () => {
+  document.getElementById('kicked-modal').classList.remove('open');
   showScreen('dashboard');
 });
 
@@ -878,14 +1150,34 @@ joinSubmit.addEventListener('click', async () => {
 // Override the dashboard join button to open modal instead of prompt
 document.getElementById('dash-join-btn').addEventListener('click', openJoinModal);
 
-// ── Community toggle — restore + persist ─────────────────────────────────
+// ── Source chip toggles — restore + persist ──────────────────────────────
 const communityCheckbox = document.getElementById('include-community-toggle');
-const communityLabel = communityCheckbox.closest('.community-toggle-label');
+const ownCheckbox = document.getElementById('include-own-toggle');
 const _communityOn = localStorage.getItem('community-photos') === 'true';
+const _ownOn = localStorage.getItem('include-own-photos') !== 'false'; // default true
 communityCheckbox.checked = _communityOn;
-communityLabel.classList.toggle('is-on', _communityOn);
+ownCheckbox.checked = _ownOn;
+// Sync active class on chips
+communityCheckbox.closest('.source-chip').classList.toggle('is-on', _communityOn);
+ownCheckbox.closest('.source-chip').classList.toggle('is-on', _ownOn);
+ownCheckbox.addEventListener('change', () => {
+  if (!ownCheckbox.checked && !communityCheckbox.checked) {
+    ownCheckbox.checked = true;
+    ownCheckbox.closest('.source-chip').classList.add('is-on');
+    import('./utils.js').then(m => m.toast('At least one photo source must be active.', 'error'));
+    return;
+  }
+  ownCheckbox.closest('.source-chip').classList.toggle('is-on', ownCheckbox.checked);
+  localStorage.setItem('include-own-photos', ownCheckbox.checked);
+});
 communityCheckbox.addEventListener('change', () => {
-  communityLabel.classList.toggle('is-on', communityCheckbox.checked);
+  if (!communityCheckbox.checked && !ownCheckbox.checked) {
+    communityCheckbox.checked = true;
+    communityCheckbox.closest('.source-chip').classList.add('is-on');
+    import('./utils.js').then(m => m.toast('At least one photo source must be active.', 'error'));
+    return;
+  }
+  communityCheckbox.closest('.source-chip').classList.toggle('is-on', communityCheckbox.checked);
   localStorage.setItem('community-photos', communityCheckbox.checked);
 });
 

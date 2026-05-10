@@ -4,9 +4,10 @@
  */
 
 import { signIn, signUp, onAuthChange, getDisplayName } from './auth.js';
-import { showScreen } from './utils.js';
+import { showScreen, toast } from './utils.js';
 import { loadDashboard, rejoinActiveRoom, showLoading } from './dashboardScreen.js';
 import { restoreGameSnapshot } from './game.js';
+import { supabase } from './supabase.js';
 
 let isSignUp = false;
 let initialised = false;
@@ -17,6 +18,16 @@ export function initAuth() {
       if (!initialised) {
         initialised = true;
         if (user) {
+          // Guard: sign out suspended users who still have a valid session
+          const { data: suspended } = await supabase.rpc('check_user_suspended', { p_user_id: user.id });
+          if (suspended) {
+            await supabase.auth.signOut();
+            showScreen('auth');
+            showError('Your account has been suspended. Please contact the admin for help.');
+            toast('Your account has been suspended. Contact the admin for help.', 'error', 6000);
+            return;
+          }
+
           const snapshot = sessionStorage.getItem('gameSnapshot');
           const activeRoomId = sessionStorage.getItem('activeRoomId');
           const hasRestore = snapshot || activeRoomId;
@@ -175,7 +186,10 @@ async function handleSubmit() {
       await signIn(email, password);
     }
   } catch (err) {
-    showError(err.message ?? 'Something went wrong. Please try again.');
+    const msg = err.message ?? 'Something went wrong. Please try again.';
+    const isSuspended = msg.toLowerCase().includes('suspended');
+    showError(msg);
+    if (isSuspended) toast('Your account has been suspended. Contact the admin for help.', 'error', 6000);
     btn.disabled = false;
     btn.textContent = isSignUp ? 'Create account' : 'Sign in';
   }
