@@ -83,11 +83,25 @@ export function initAuth() {
     if (e.key === 'Enter') handleSubmit();
   });
 
+  wirePasswordEye('auth-password', 'auth-password-eye');
+  wirePasswordEye('auth-confirm', 'auth-confirm-eye');
+
   // Live validation
   document.getElementById('auth-email').addEventListener('blur', () => validateEmail(true));
   document.getElementById('auth-password').addEventListener('blur', () => validatePassword(true));
   document.getElementById('auth-confirm').addEventListener('blur', () => validateConfirm(true));
   document.getElementById('auth-username').addEventListener('blur', () => validateUsername(true));
+}
+
+function wirePasswordEye(inputId, btnId) {
+  const btn = document.getElementById(btnId);
+  const input = document.getElementById(inputId);
+  btn.addEventListener('click', () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.querySelector('.eye-icon').style.display = show ? 'none' : '';
+    btn.querySelector('.eye-off-icon').style.display = show ? '' : 'none';
+  });
 }
 
 function toggleMode() {
