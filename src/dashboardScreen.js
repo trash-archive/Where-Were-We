@@ -24,12 +24,13 @@ async function assertNotSuspended() {
 
 let currentUser = null;
 let userPhotos = [];
+let photosCached = false;
 let unsubRoom = null;
 let unsubRoomsList = null;
 let currentRoom = null;
 let eventsWired = false;
 let currentPage = 1;
-const PAGE_SIZE = 19;
+const PAGE_SIZE = 20;
 
 // ── Init (called once at startup) ─────────────────────────────────────────
 export function initDashboard() {
@@ -47,22 +48,47 @@ export async function loadDashboard(user) {
   document.getElementById('nav-dropdown-email').textContent = user.email ?? '';
   document.getElementById('play-hero-greeting').textContent = `Welcome back, ${name}`;
   showAdminNavBtn(user);
-  prewarmNsfwModel(); // start loading model in background — doesn't block
+  prewarmNsfwModel();
   renderGameStats(user.id);
-  await Promise.all([refreshPhotos(), loadRooms()]);
+  // Only fetch photos on first load; subsequent visits use the in-memory cache
+  if (!photosCached) {
+    await Promise.all([refreshPhotos(), loadRooms()]);
+  } else {
+    renderPhotoGrid();
+    updateStats();
+    renderGpsBanner();
+    loadRooms();
+  }
   subscribeRoomsList();
 }
 
-async function refreshPhotos() {
+async function refreshPhotos(preservePage = false) {
   try {
     userPhotos = await getUserPhotos(currentUser.id);
-    currentPage = 1;
+    photosCached = true;
+    if (!preservePage) currentPage = 1;
     renderPhotoGrid();
     updateStats();
     renderGpsBanner();
   } catch (e) {
     toast('Could not load photos.', 'error');
   }
+}
+
+function patchPhoto(photoId, changes) {
+  const idx = userPhotos.findIndex(p => p.id === photoId);
+  if (idx === -1) return;
+  userPhotos[idx] = { ...userPhotos[idx], ...changes };
+  // Patch only the affected tile if it's currently visible — no full re-render
+  const grid = document.getElementById('dash-photo-grid');
+  const tile = Array.from(grid.children).find(el => el.dataset.id === photoId);
+  if (tile) {
+    patchTile(tile, userPhotos[idx]);
+  } else {
+    renderPhotoGrid();
+  }
+  updateStats();
+  renderGpsBanner();
 }
 
 function renderGpsBanner() {
@@ -279,95 +305,238 @@ async function rejoinRoom(roomId) {
 }
 
 // ── Photo Grid ─────────────────────────────────────────────────────────────
+
+// SVG strings defined once — not recreated on every render
+const SVG = {
+  pin:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
+  globe:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+  trash:  `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`,
+  dotGps: `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
+  dotNo:  `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  dotPub: `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+  upload: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  prev:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>`,
+  next:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>`,
+};
+
+// Build a photo tile DOM node (no innerHTML on the grid)
+function buildPhotoTile(p) {
+  const div = document.createElement('div');
+  div.className = 'photo-item';
+  div.dataset.id = p.id;
+
+  const img = document.createElement('img');
+  img.src = p.public_url;
+  img.alt = p.original_name ?? '';
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  div.appendChild(img);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'photo-item-overlay';
+  const actions = document.createElement('div');
+  actions.className = 'photo-item-actions';
+
+  const locBtn = document.createElement('button');
+  locBtn.className = 'photo-item-btn';
+  locBtn.dataset.action = 'locate';
+  locBtn.dataset.id = p.id;
+  locBtn.title = 'Set location';
+  locBtn.innerHTML = SVG.pin;
+
+  const pubBtn = document.createElement('button');
+  pubBtn.className = `photo-item-btn photo-item-btn--public${p.is_public ? ' active' : ''}`;
+  pubBtn.dataset.action = 'toggle-public';
+  pubBtn.dataset.id = p.id;
+  pubBtn.dataset.public = p.is_public;
+  pubBtn.title = p.is_public ? 'Make private' : 'Make public';
+  pubBtn.innerHTML = SVG.globe;
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'photo-item-btn';
+  delBtn.dataset.action = 'delete';
+  delBtn.dataset.id = p.id;
+  delBtn.dataset.path = p.storage_path;
+  delBtn.title = 'Delete';
+  delBtn.innerHTML = SVG.trash;
+
+  actions.append(locBtn, pubBtn, delBtn);
+  overlay.appendChild(actions);
+  div.appendChild(overlay);
+
+  const indicators = document.createElement('div');
+  indicators.className = 'photo-indicators';
+  const gpsDot = document.createElement('span');
+  gpsDot.className = p.lat !== null ? 'photo-dot photo-dot--gps' : 'photo-dot photo-dot--nogps';
+  gpsDot.title = p.lat !== null ? 'Has GPS' : 'No GPS';
+  gpsDot.innerHTML = p.lat !== null ? SVG.dotGps : SVG.dotNo;
+  indicators.appendChild(gpsDot);
+  if (p.is_public) {
+    const pubDot = document.createElement('span');
+    pubDot.className = 'photo-dot photo-dot--public';
+    pubDot.title = 'Public';
+    pubDot.innerHTML = SVG.dotPub;
+    indicators.appendChild(pubDot);
+  }
+  div.appendChild(indicators);
+  return div;
+}
+
+// Update only the parts of an existing tile that changed (avoids full rebuild)
+function patchTile(tile, p) {
+  const img = tile.querySelector('img');
+  if (img && img.src !== p.public_url) img.src = p.public_url;
+
+  const pubBtn = tile.querySelector('[data-action="toggle-public"]');
+  if (pubBtn) {
+    const isPublic = pubBtn.dataset.public === 'true';
+    if (isPublic !== p.is_public) {
+      pubBtn.dataset.public = p.is_public;
+      pubBtn.title = p.is_public ? 'Make private' : 'Make public';
+      pubBtn.classList.toggle('active', p.is_public);
+    }
+  }
+
+  const delBtn = tile.querySelector('[data-action="delete"]');
+  if (delBtn && delBtn.dataset.path !== p.storage_path) delBtn.dataset.path = p.storage_path;
+
+  const indicators = tile.querySelector('.photo-indicators');
+  if (indicators) {
+    const gpsDot = indicators.querySelector('.photo-dot');
+    const wantsGps = p.lat !== null;
+    const hasGps = gpsDot?.classList.contains('photo-dot--gps');
+    if (wantsGps !== hasGps) {
+      // GPS state changed — rebuild indicators cheaply
+      indicators.innerHTML = '';
+      const dot = document.createElement('span');
+      dot.className = wantsGps ? 'photo-dot photo-dot--gps' : 'photo-dot photo-dot--nogps';
+      dot.title = wantsGps ? 'Has GPS' : 'No GPS';
+      dot.innerHTML = wantsGps ? SVG.dotGps : SVG.dotNo;
+      indicators.appendChild(dot);
+    }
+    const pubDot = indicators.querySelector('.photo-dot--public');
+    if (p.is_public && !pubDot) {
+      const d = document.createElement('span');
+      d.className = 'photo-dot photo-dot--public';
+      d.title = 'Public';
+      d.innerHTML = SVG.dotPub;
+      indicators.appendChild(d);
+    } else if (!p.is_public && pubDot) {
+      pubDot.remove();
+    }
+  }
+}
+
+function getPageSlice() {
+  const page1Photos = PAGE_SIZE - 1;
+  const totalPages = userPhotos.length <= page1Photos
+    ? 1
+    : 1 + Math.ceil((userPhotos.length - page1Photos) / PAGE_SIZE);
+  if (currentPage > totalPages) currentPage = Math.max(1, totalPages);
+  const pageSize = currentPage === 1 ? page1Photos : PAGE_SIZE;
+  const start = currentPage === 1 ? 0 : page1Photos + (currentPage - 2) * PAGE_SIZE;
+  return { page: userPhotos.slice(start, start + pageSize), start, pageSize, totalPages };
+}
+
+function wireGridEvents(grid) {
+  // Single delegated listener — wired once, never re-added
+  if (grid.dataset.wired) return;
+  grid.dataset.wired = '1';
+
+  const mq = window.matchMedia('(max-width: 768px)');
+
+  grid.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (btn) {
+      e.stopPropagation();
+      const { action, id, path } = btn.dataset;
+      if (action === 'locate')        handleLocate(id);
+      if (action === 'toggle-public') handleTogglePublic(id, btn.dataset.public === 'true');
+      if (action === 'delete')        handleDelete(id, path);
+      return;
+    }
+    const item = e.target.closest('.photo-item');
+    if (!item || item.classList.contains('photo-upload-tile')) return;
+    if (mq.matches) {
+      if (item.classList.contains('selected')) {
+        const img = item.querySelector('img');
+        openDashLightbox(img.src, img.alt);
+      } else {
+        grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
+        item.classList.add('selected');
+      }
+    } else {
+      const img = item.querySelector('img');
+      openDashLightbox(img.src, img.alt);
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!grid.contains(e.target))
+      grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
+  }, { capture: true });
+}
+
 function renderPhotoGrid() {
   const grid = document.getElementById('dash-photo-grid');
   const paginationEl = document.getElementById('dash-pagination');
 
+  wireGridEvents(grid);
+
   if (userPhotos.length === 0) {
-    grid.innerHTML = `
-      <label class="photo-item photo-upload-tile" for="dash-file-input">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        <span>Upload Photos</span>
-      </label>`;
+    // Keep the upload tile if it's the only child, otherwise rebuild
+    if (grid.children.length !== 1 || !grid.firstElementChild.classList.contains('photo-upload-tile')) {
+      grid.innerHTML = '';
+      const label = document.createElement('label');
+      label.className = 'photo-item photo-upload-tile';
+      label.htmlFor = 'dash-file-input';
+      label.innerHTML = SVG.upload + '<span>Upload Photos</span>';
+      grid.appendChild(label);
+    }
     paginationEl.style.display = 'none';
     return;
   }
 
-  const totalPages = Math.ceil(userPhotos.length / PAGE_SIZE);
-  // Clamp currentPage in case photos were deleted
-  if (currentPage > totalPages) currentPage = totalPages;
+  const { page, start, pageSize, totalPages } = getPageSlice();
 
-  const start = (currentPage - 1) * PAGE_SIZE;
-  const page = userPhotos.slice(start, start + PAGE_SIZE);
+  // Build the desired ordered list of keys for this page
+  const desiredKeys = [];
+  if (currentPage === 1) desiredKeys.push('__upload__');
+  page.forEach(p => desiredKeys.push(p.id));
 
-  const uploadTile = currentPage === 1 ? `
-    <label class="photo-item photo-upload-tile" for="dash-file-input">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      <span>Upload Photos</span>
-    </label>` : '';
+  // Index existing tiles by key
+  const existing = new Map();
+  for (const child of grid.children) {
+    const key = child.dataset.id ?? '__upload__';
+    existing.set(key, child);
+  }
 
-  grid.innerHTML = uploadTile + page.map(p => `
-    <div class="photo-item" data-id="${p.id}">
-      <img src="${p.public_url}" alt="${escapeHtml(p.original_name ?? '')}" loading="lazy">
-      <div class="photo-item-overlay">
-        <div class="photo-item-actions">
-          <button class="photo-item-btn" data-action="locate" data-id="${p.id}" title="Set location">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-          </button>
-          <button class="photo-item-btn photo-item-btn--public ${p.is_public ? 'active' : ''}" data-action="toggle-public" data-id="${p.id}" data-public="${p.is_public}" title="${p.is_public ? 'Make private' : 'Make public'}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          </button>
-          <button class="photo-item-btn" data-action="delete" data-id="${p.id}" data-path="${p.storage_path}" title="Delete">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-          </button>
-
-        </div>
-      </div>
-      <div class="photo-indicators">
-        ${p.lat !== null
-          ? '<span class="photo-dot photo-dot--gps" title="Has GPS"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span>'
-          : '<span class="photo-dot photo-dot--nogps" title="No GPS"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></span>'
-        }${p.is_public ? '<span class="photo-dot photo-dot--public" title="Public"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>' : ''}
-      </div>
-    </div>
-  `).join('');
-
-  // Click behaviour: desktop = open lightbox, mobile = first tap selects, second tap opens lightbox
-  grid.querySelectorAll('.photo-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const isMobile = window.matchMedia('(max-width: 768px)').matches;
-      if (isMobile) {
-        if (item.classList.contains('selected')) {
-          // Second tap — open lightbox
-          const img = item.querySelector('img');
-          openDashLightbox(img.src, img.alt);
-        } else {
-          // First tap — select
-          grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
-          item.classList.add('selected');
-        }
+  // Reconcile: insert/move/patch tiles to match desired order
+  desiredKeys.forEach((key, i) => {
+    let tile = existing.get(key);
+    if (!tile) {
+      if (key === '__upload__') {
+        tile = document.createElement('label');
+        tile.className = 'photo-item photo-upload-tile';
+        tile.htmlFor = 'dash-file-input';
+        tile.innerHTML = SVG.upload + '<span>Upload Photos</span>';
       } else {
-        const img = item.querySelector('img');
-        openDashLightbox(img.src, img.alt);
+        const p = page.find(x => x.id === key);
+        tile = buildPhotoTile(p);
       }
-    });
-  });
-  // Deselect when clicking outside the grid
-  document.addEventListener('click', (e) => {
-    if (!grid.contains(e.target)) {
-      grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
+    } else if (key !== '__upload__') {
+      patchTile(tile, page.find(x => x.id === key));
     }
-  }, { capture: true });
+    // Move to correct position if needed
+    const current = grid.children[i];
+    if (current !== tile) grid.insertBefore(tile, current ?? null);
+  });
 
-  grid.querySelectorAll('[data-action="locate"]').forEach(btn => {
-    btn.addEventListener('click', e => { e.stopPropagation(); handleLocate(btn.dataset.id); });
-  });
-  grid.querySelectorAll('[data-action="toggle-public"]').forEach(btn => {
-    btn.addEventListener('click', e => { e.stopPropagation(); handleTogglePublic(btn.dataset.id, btn.dataset.public === 'true'); });
-  });
-  grid.querySelectorAll('[data-action="delete"]').forEach(btn => {
-    btn.addEventListener('click', e => { e.stopPropagation(); handleDelete(btn.dataset.id, btn.dataset.path); });
-  });
+  // Remove tiles no longer in this page
+  const desiredSet = new Set(desiredKeys);
+  for (const [key, tile] of existing) {
+    if (!desiredSet.has(key)) tile.remove();
+  }
 
   // Pagination
   if (totalPages <= 1) {
@@ -375,29 +544,23 @@ function renderPhotoGrid() {
     return;
   }
   paginationEl.style.display = 'flex';
-  const from = start + 1, to = Math.min(start + PAGE_SIZE, userPhotos.length);
+  const from = start + 1, to = Math.min(start + pageSize, userPhotos.length);
   paginationEl.innerHTML = `
     <span class="pagination-info">${from}–${to} of ${userPhotos.length}</span>
     <div class="pagination-controls">
-      <button class="page-btn" id="page-prev" ${currentPage === 1 ? 'disabled' : ''}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
-      </button>
+      <button class="page-btn" id="page-prev" ${currentPage === 1 ? 'disabled' : ''}>${SVG.prev}</button>
       ${Array.from({ length: totalPages }, (_, i) => i + 1)
         .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
         .reduce((acc, p, idx, arr) => {
           if (idx > 0 && p - arr[idx - 1] > 1) acc.push('…');
-          acc.push(p);
-          return acc;
+          acc.push(p); return acc;
         }, [])
         .map(p => p === '…'
           ? `<span style="padding:0 4px;color:var(--gray-400);">…</span>`
           : `<button class="page-btn${p === currentPage ? ' active' : ''}" data-page="${p}">${p}</button>`
         ).join('')}
-      <button class="page-btn" id="page-next" ${currentPage === totalPages ? 'disabled' : ''}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-      </button>
-    </div>
-  `;
+      <button class="page-btn" id="page-next" ${currentPage === totalPages ? 'disabled' : ''}>${SVG.next}</button>
+    </div>`;
   paginationEl.querySelector('#page-prev')?.addEventListener('click', () => { currentPage--; renderPhotoGrid(); });
   paginationEl.querySelector('#page-next')?.addEventListener('click', () => { currentPage++; renderPhotoGrid(); });
   paginationEl.querySelectorAll('[data-page]').forEach(btn => {
@@ -413,7 +576,7 @@ async function handleLocate(photoId) {
   try {
     await updatePhotoLocation(photoId, result.lat, result.lng);
     toast('Location saved!', 'success');
-    await refreshPhotos();
+    patchPhoto(photoId, { lat: result.lat, lng: result.lng });
   } catch {
     toast('Could not save location.', 'error');
   }
@@ -424,7 +587,7 @@ async function handleTogglePublic(photoId, currentlyPublic) {
   try {
     await togglePhotoPublic(photoId, next);
     toast(next ? 'Photo is now public 🌐' : 'Photo is now private', 'success');
-    await refreshPhotos();
+    patchPhoto(photoId, { is_public: next });
   } catch {
     toast('Could not update visibility.', 'error');
   }
@@ -436,7 +599,14 @@ async function handleDelete(photoId, storagePath) {
   try {
     await deletePhoto(photoId, storagePath);
     toast('Photo deleted.', 'success');
-    await refreshPhotos();
+    userPhotos = userPhotos.filter(p => p.id !== photoId);
+    // Clamp page if last item on page was deleted
+    const page1Photos = PAGE_SIZE - 1;
+    const totalPages = userPhotos.length <= page1Photos ? 1 : 1 + Math.ceil((userPhotos.length - page1Photos) / PAGE_SIZE);
+    if (currentPage > totalPages) currentPage = Math.max(1, totalPages);
+    renderPhotoGrid();
+    updateStats();
+    renderGpsBanner();
   } catch {
     toast('Could not delete photo.', 'error');
   }
@@ -690,12 +860,15 @@ async function startMultiplayerGame(room) {
 function openDashLightbox(src, alt) {
   const overlay = document.createElement('div');
   overlay.className = 'dash-lightbox';
-  overlay.innerHTML = `
-    <img src="${src}" alt="${alt}">
-    <button class="dash-lightbox-close" aria-label="Close">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-    </button>
-  `;
+  // Build with DOM API so user-supplied alt text can never inject HTML
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = alt;
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'dash-lightbox-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+  overlay.append(img, closeBtn);
   document.body.appendChild(overlay);
   requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('open')));
 
@@ -704,8 +877,8 @@ function openDashLightbox(src, alt) {
     overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
   };
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-  overlay.querySelector('img').addEventListener('click', e => e.stopPropagation());
-  overlay.querySelector('.dash-lightbox-close').addEventListener('click', close);
+  img.addEventListener('click', e => e.stopPropagation());
+  closeBtn.addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); }, { once: true });
 }
 
@@ -861,6 +1034,8 @@ function wireEvents() {
   document.getElementById('nav-signout-btn').addEventListener('click', async () => {
     if (unsubRoomsList) { unsubRoomsList(); unsubRoomsList = null; }
     if (unsubRoom) { unsubRoom(); unsubRoom = null; }
+    photosCached = false;
+    userPhotos = [];
     await signOut().catch(() => {});
   });
 

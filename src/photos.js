@@ -192,7 +192,9 @@ export async function getPublicPhotos(limit = 100) {
 
 export async function getUserPhotos(userId) {
   const { data, error } = await supabase
-    .from('photos').select('*').eq('user_id', userId)
+    .from('photos')
+    .select('id, public_url, original_name, storage_path, lat, lng, is_public, created_at')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data ?? [];
